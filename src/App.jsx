@@ -299,7 +299,7 @@ export default function App() {
         ) : (
           <div className="empty-state">
             <span className="empty-icon">🎙️</span>
-            <p>Grabá o escribí para ver las decisiones del día</p>
+            <p>Las decisiones de hoy aparecen acá</p>
           </div>
         )}
       </div>
@@ -320,11 +320,11 @@ export default function App() {
             🎙️
           </button>
           <span className={`mic-label ${recording ? 'recording' : ''}`}>
-            {recording ? '● Grabando — soltá para enviar' : 'Mantené para grabar'}
+            {recording ? '● Grabando — soltá para enviar' : 'Consultá por voz'}
           </span>
         </div>
 
-        <div className="divider"><span>o escribí</span></div>
+        <div className="divider"><span>o escribí tu consulta</span></div>
 
         <div className="text-input-row">
           <input
@@ -333,7 +333,7 @@ export default function App() {
             value={textInput}
             onChange={e => setTextInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && sendText()}
-            placeholder="¿Qué pasó hoy en el negocio?"
+            placeholder="Preguntale algo a Gelline..."
             disabled={loading}
           />
           <button
