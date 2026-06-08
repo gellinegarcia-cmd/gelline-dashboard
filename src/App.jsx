@@ -15,6 +15,9 @@ const DEFAULT_DEVICE = {
   apertura:         '09:00',
   cierre:           '20:00',
   saludoAutomatico: false,
+  descanso:         false,
+  descansoInicio:   '13:00',
+  descansoFin:      '14:00',
 }
 
 function getStoredPerfil() {
@@ -132,11 +135,12 @@ function ProfileForm({ initial = {}, onSave, onCancel }) {
 
 function ConfigurarDispositivo({ perfil, onBack }) {
   const [config,      setConfig]      = useState(getStoredDevice)
-  const [grabando,    setGrabando]    = useState(false)   // bloque activo
-  const [procesando,  setProcesando]  = useState(false)   // enviando al server
-  const [ultimoEnvio, setUltimoEnvio] = useState(null)
-  const [elapsed,     setElapsed]     = useState(0)
-  const [tick,        setTick]        = useState(0)
+  const [grabando,         setGrabando]         = useState(false)
+  const [procesando,       setProcesando]       = useState(false)
+  const [enDescansoActual, setEnDescansoActual] = useState(false)
+  const [ultimoEnvio,      setUltimoEnvio]      = useState(null)
+  const [elapsed,          setElapsed]          = useState(0)
+  const [tick,             setTick]             = useState(0)
 
   const activeRef       = useRef(false)
   const mrRef           = useRef(null)
@@ -157,6 +161,15 @@ function ConfigurarDispositivo({ perfil, onBack }) {
     const [ah, am] = cfg.apertura.split(':').map(Number)
     const [ch, cm] = cfg.cierre.split(':').map(Number)
     return cur >= ah * 60 + am && cur < ch * 60 + cm
+  }
+
+  function esEnDescanso(cfg) {
+    if (!cfg.descanso) return false
+    const now = new Date()
+    const cur = now.getHours() * 60 + now.getMinutes()
+    const [ih, im] = cfg.descansoInicio.split(':').map(Number)
+    const [fh, fm] = cfg.descansoFin.split(':').map(Number)
+    return cur >= ih * 60 + im && cur < fh * 60 + fm
   }
 
   // ── Grabación continua ────────────────────────────────────────────────────
@@ -233,18 +246,22 @@ function ConfigurarDispositivo({ perfil, onBack }) {
     }
 
     const check = () => {
-      if (esDentroHorario(config)) {
-        if (!activeRef.current) iniciarGrabacion()
-      } else {
-        if (activeRef.current) detenerGrabacion()
-      }
+      const dentro    = esDentroHorario(config)
+      const descanso  = esEnDescanso(config)
+      const debeGrabar = dentro && !descanso
+
+      setEnDescansoActual(dentro && descanso)
+
+      if (debeGrabar && !activeRef.current) iniciarGrabacion()
+      else if (!debeGrabar && activeRef.current) detenerGrabacion()
     }
 
     check()
     const id = setInterval(check, 60_000)
     return () => clearInterval(id)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.activo, config.apertura, config.cierre])
+  }, [config.activo, config.apertura, config.cierre,
+      config.descanso, config.descansoInicio, config.descansoFin])
 
   // Cleanup al salir de la pantalla
   useEffect(() => {
@@ -273,9 +290,10 @@ function ConfigurarDispositivo({ perfil, onBack }) {
   // ── Estado actual ─────────────────────────────────────────────────────────
 
   function getEstado() {
-    if (!config.activo)          return { label: 'Inactivo',        cls: 'inactivo' }
-    if (grabando || procesando)  return { label: 'Escuchando',      cls: 'escuchando' }
-    return                              { label: 'Fuera de horario', cls: 'fuera' }
+    if (!config.activo)         return { label: 'Inactivo',        cls: 'inactivo' }
+    if (grabando || procesando) return { label: 'Escuchando',      cls: 'escuchando' }
+    if (enDescansoActual)       return { label: 'En descanso',     cls: 'descanso' }
+    return                             { label: 'Fuera de horario', cls: 'fuera' }
   }
 
   function formatElapsed(s) {
@@ -355,6 +373,47 @@ function ConfigurarDispositivo({ perfil, onBack }) {
               onChange={e => saveConfig({ cierre: e.target.value })}
             />
           </div>
+        </div>
+
+        {/* Descanso al mediodía */}
+        <div className="cd-card">
+          <div className="cd-row">
+            <div className="cd-row-info">
+              <span className="cd-row-label">Descanso al mediodía</span>
+              <span className="cd-row-sub">
+                Pausa la grabación durante el horario de descanso
+              </span>
+            </div>
+            <button
+              className={`cd-toggle ${config.descanso ? 'on' : ''}`}
+              onClick={() => saveConfig({ descanso: !config.descanso })}
+              aria-label="Activar descanso"
+            />
+          </div>
+          {config.descanso && (
+            <>
+              <div className="cd-sep" />
+              <div className="cd-time-row">
+                <label className="cd-time-label">Inicio descanso</label>
+                <input
+                  className="cd-time-input"
+                  type="time"
+                  value={config.descansoInicio}
+                  onChange={e => saveConfig({ descansoInicio: e.target.value })}
+                />
+              </div>
+              <div className="cd-sep" />
+              <div className="cd-time-row">
+                <label className="cd-time-label">Fin descanso</label>
+                <input
+                  className="cd-time-input"
+                  type="time"
+                  value={config.descansoFin}
+                  onChange={e => saveConfig({ descansoFin: e.target.value })}
+                />
+              </div>
+            </>
+          )}
         </div>
 
         {/* Toggle saludo automático */}

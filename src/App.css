@@ -266,7 +266,8 @@
   background: #a855f7;
   animation: blink 1.4s ease-in-out infinite;
 }
-.cd-estado.fuera .cd-estado-dot  { background: #f59e0b; }
+.cd-estado.fuera .cd-estado-dot    { background: #f59e0b; }
+.cd-estado.descanso .cd-estado-dot { background: #fbbf24; }
 .cd-estado.inactivo .cd-estado-dot { background: #374151; }
 
 .cd-estado-label {
