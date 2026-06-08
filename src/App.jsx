@@ -5,7 +5,11 @@ import './App.css'
 const API         = 'https://kiosco-ai.onrender.com'
 const STORAGE_KEY = 'kiosco_perfil'
 const DEVICE_KEY  = 'kiosco_dispositivo'
-const BLOQUE_MS   = 2 * 60 * 1000  // 2 minutos por bloque
+const VAD_INTERVAL_MS    = 100
+const VAD_THRESHOLD      = 0.01
+const SILENCE_TIMEOUT_MS = 10_000
+const MAX_BLOCK_MS       = 60_000
+const CHUNK_INTERVAL_MS  = 200
 
 const TIPOS = ['kiosco', 'carnicería', 'verdulería', 'ropa', 'almacén', 'panadería', 'otro']
 const CLIENTES_OPTS = ['familias', 'estudiantes', 'oficinistas', 'vecinos del barrio', 'jubilados']
@@ -133,19 +137,36 @@ function ProfileForm({ initial = {}, onSave, onCancel }) {
 
 // ── Configurar Dispositivo ────────────────────────────────────────────────────
 
+function getRMS(analyser) {
+  const buf = new Uint8Array(analyser.fftSize)
+  analyser.getByteTimeDomainData(buf)
+  let sum = 0
+  for (let i = 0; i < buf.length; i++) {
+    const s = (buf[i] - 128) / 128
+    sum += s * s
+  }
+  return Math.sqrt(sum / buf.length)
+}
+
 function ConfigurarDispositivo({ perfil, onBack }) {
-  const [config,      setConfig]      = useState(getStoredDevice)
+  const [config,           setConfig]           = useState(getStoredDevice)
   const [grabando,         setGrabando]         = useState(false)
   const [procesando,       setProcesando]       = useState(false)
   const [enDescansoActual, setEnDescansoActual] = useState(false)
   const [ultimoEnvio,      setUltimoEnvio]      = useState(null)
-  const [elapsed,          setElapsed]          = useState(0)
   const [tick,             setTick]             = useState(0)
 
-  const activeRef       = useRef(false)
-  const mrRef           = useRef(null)
-  const streamRef       = useRef(null)
-  const blockTimerRef   = useRef(null)
+  const activeRef         = useRef(false)
+  const mrRef             = useRef(null)
+  const streamRef         = useRef(null)
+  const audioCtxRef       = useRef(null)
+  const analyserRef       = useRef(null)
+  const vadTimerRef       = useRef(null)
+  const allChunksRef      = useRef([])
+  const blockOpenRef      = useRef(false)
+  const blockStartTsRef   = useRef(null)
+  const lastVoiceTsRef    = useRef(null)
+  const sendingRef        = useRef(false)
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -172,47 +193,74 @@ function ConfigurarDispositivo({ perfil, onBack }) {
     return cur >= ih * 60 + im && cur < fh * 60 + fm
   }
 
-  // ── Grabación continua ────────────────────────────────────────────────────
+  // ── VAD + grabación ───────────────────────────────────────────────────────
 
-  async function grabarBloque(stream) {
-    if (!activeRef.current) return
-
-    setGrabando(true)
-    setProcesando(false)
-
-    const mr = new MediaRecorder(stream)
-    mrRef.current = mr
-    const chunks = []
-    mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
-
-    await new Promise(resolve => {
-      mr.onstop = resolve
-      mr.start()
-      blockTimerRef.current = setTimeout(() => {
-        if (mr.state === 'recording') mr.stop()
-      }, BLOQUE_MS)
-    })
-
-    clearTimeout(blockTimerRef.current)
-    if (!activeRef.current) { setGrabando(false); return }
-
-    setGrabando(false)
+  async function sendVoiceBlock(blobs) {
+    if (!blobs.length) return
     setProcesando(true)
-
-    const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' })
+    const mimeType = mrRef.current?.mimeType || 'audio/webm'
+    const blob = new Blob(blobs, { type: mimeType })
     const form = new FormData()
     form.append('audio', blob, 'audio.webm')
     if (perfil) form.append('perfil', JSON.stringify(perfil))
-
     try {
       await fetch(`${API}/audio`, { method: 'POST', body: form })
       setUltimoEnvio(new Date())
     } catch (e) {
-      console.error('Error enviando bloque:', e)
+      console.error('Error enviando bloque de voz:', e)
+    } finally {
+      setProcesando(false)
     }
+  }
 
-    setProcesando(false)
-    grabarBloque(stream)
+  function startVAD() {
+    vadTimerRef.current = setInterval(() => {
+      if (!activeRef.current || !analyserRef.current) return
+
+      const rms     = getRMS(analyserRef.current)
+      const isVoice = rms > VAD_THRESHOLD
+      const now     = Date.now()
+
+      if (isVoice) {
+        lastVoiceTsRef.current = now
+        if (!blockOpenRef.current) {
+          blockOpenRef.current    = true
+          blockStartTsRef.current = now
+        }
+      }
+
+      if (blockOpenRef.current) {
+        const silenceMs = now - (lastVoiceTsRef.current ?? now)
+        const blockMs   = now - blockStartTsRef.current
+
+        const shouldSend = (silenceMs >= SILENCE_TIMEOUT_MS || blockMs >= MAX_BLOCK_MS)
+          && !sendingRef.current
+
+        if (shouldSend) {
+          const captureStart = blockStartTsRef.current - 500
+          const captureEnd   = (lastVoiceTsRef.current ?? now) + 500
+
+          blockOpenRef.current    = false
+          blockStartTsRef.current = null
+          lastVoiceTsRef.current  = null
+
+          const blobs = allChunksRef.current
+            .filter(c => c.ts >= captureStart && c.ts <= captureEnd)
+            .map(c => c.blob)
+            .filter(b => b.size > 0)
+
+          allChunksRef.current = allChunksRef.current.filter(c => c.ts > now - 5_000)
+
+          if (blobs.length > 0) {
+            sendingRef.current = true
+            sendVoiceBlock(blobs).finally(() => { sendingRef.current = false })
+          }
+        }
+      }
+
+      // Mantener buffer acotado
+      allChunksRef.current = allChunksRef.current.filter(c => c.ts > now - MAX_BLOCK_MS - 5_000)
+    }, VAD_INTERVAL_MS)
   }
 
   async function iniciarGrabacion() {
@@ -221,18 +269,49 @@ function ConfigurarDispositivo({ perfil, onBack }) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
       activeRef.current = true
-      grabarBloque(stream)
+
+      const AudioCtx = window.AudioContext || window.webkitAudioContext
+      const audioCtx = new AudioCtx()
+      audioCtxRef.current = audioCtx
+      const source   = audioCtx.createMediaStreamSource(stream)
+      const analyser = audioCtx.createAnalyser()
+      analyser.fftSize = 2048
+      source.connect(analyser)
+      analyserRef.current = analyser
+
+      const mr = new MediaRecorder(stream)
+      mrRef.current = mr
+      allChunksRef.current    = []
+      blockOpenRef.current    = false
+      blockStartTsRef.current = null
+      lastVoiceTsRef.current  = null
+
+      mr.ondataavailable = e => {
+        if (e.data.size > 0) allChunksRef.current.push({ blob: e.data, ts: Date.now() })
+      }
+      mr.start(CHUNK_INTERVAL_MS)
+
+      startVAD()
+      setGrabando(true)
     } catch (e) {
-      console.error('Error accediendo al micrófono:', e)
+      console.error('No se pudo acceder al micrófono:', e)
+      activeRef.current = false
     }
   }
 
   function detenerGrabacion() {
     activeRef.current = false
-    clearTimeout(blockTimerRef.current)
-    if (mrRef.current?.state === 'recording') mrRef.current.stop()
+    clearInterval(vadTimerRef.current)
+    if (mrRef.current?.state !== 'inactive') mrRef.current?.stop()
     streamRef.current?.getTracks().forEach(t => t.stop())
-    streamRef.current = null
+    if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close().catch(() => {})
+    streamRef.current       = null
+    analyserRef.current     = null
+    audioCtxRef.current     = null
+    allChunksRef.current    = []
+    blockOpenRef.current    = false
+    blockStartTsRef.current = null
+    lastVoiceTsRef.current  = null
     setGrabando(false)
     setProcesando(false)
   }
@@ -246,8 +325,8 @@ function ConfigurarDispositivo({ perfil, onBack }) {
     }
 
     const check = () => {
-      const dentro    = esDentroHorario(config)
-      const descanso  = esEnDescanso(config)
+      const dentro     = esDentroHorario(config)
+      const descanso   = esEnDescanso(config)
       const debeGrabar = dentro && !descanso
 
       setEnDescansoActual(dentro && descanso)
@@ -267,18 +346,12 @@ function ConfigurarDispositivo({ perfil, onBack }) {
   useEffect(() => {
     return () => {
       activeRef.current = false
-      clearTimeout(blockTimerRef.current)
-      if (mrRef.current?.state === 'recording') mrRef.current.stop()
+      clearInterval(vadTimerRef.current)
+      if (mrRef.current?.state !== 'inactive') mrRef.current?.stop()
       streamRef.current?.getTracks().forEach(t => t.stop())
+      if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close().catch(() => {})
     }
   }, [])
-
-  // Timer del bloque actual
-  useEffect(() => {
-    if (!grabando) { setElapsed(0); return }
-    const id = setInterval(() => setElapsed(s => s + 1), 1000)
-    return () => clearInterval(id)
-  }, [grabando])
 
   // Re-render cada 30s para "hace X min"
   useEffect(() => {
@@ -294,10 +367,6 @@ function ConfigurarDispositivo({ perfil, onBack }) {
     if (grabando || procesando) return { label: 'Escuchando',      cls: 'escuchando' }
     if (enDescansoActual)       return { label: 'En descanso',     cls: 'descanso' }
     return                             { label: 'Fuera de horario', cls: 'fuera' }
-  }
-
-  function formatElapsed(s) {
-    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
   }
 
   function formatDesdeEnvio(fecha) {
@@ -326,9 +395,6 @@ function ConfigurarDispositivo({ perfil, onBack }) {
         <div className={`cd-estado ${estado.cls}`}>
           <span className="cd-estado-dot" />
           <span className="cd-estado-label">{estado.label}</span>
-          {grabando && elapsed > 0 && (
-            <span className="cd-estado-timer">{formatElapsed(elapsed)}</span>
-          )}
           {desdeEnvio && (
             <span className="cd-estado-envio">Último envío {desdeEnvio}</span>
           )}
