@@ -5,11 +5,8 @@ import './App.css'
 const API         = 'https://kiosco-ai.onrender.com'
 const STORAGE_KEY = 'kiosco_perfil'
 const DEVICE_KEY  = 'kiosco_dispositivo'
-const VAD_INTERVAL_MS    = 100
-const VAD_THRESHOLD      = 0.005
-const SILENCE_TIMEOUT_MS = 10_000
-const MAX_BLOCK_MS       = 60_000
-const CHUNK_INTERVAL_MS  = 200
+const MAX_BLOCK_MS  = 60_000
+const RMS_THRESHOLD = 0.005
 
 const TIPOS = ['kiosco', 'carnicería', 'verdulería', 'ropa', 'almacén', 'panadería', 'otro']
 const CLIENTES_OPTS = ['familias', 'estudiantes', 'oficinistas', 'vecinos del barrio', 'jubilados']
@@ -137,15 +134,21 @@ function ProfileForm({ initial = {}, onSave, onCancel }) {
 
 // ── Configurar Dispositivo ────────────────────────────────────────────────────
 
-function getRMS(analyser) {
-  const buf = new Uint8Array(analyser.fftSize)
-  analyser.getByteTimeDomainData(buf)
-  let sum = 0
-  for (let i = 0; i < buf.length; i++) {
-    const s = (buf[i] - 128) / 128
-    sum += s * s
+async function computeBlobRMS(blob) {
+  const buf = await blob.arrayBuffer()
+  const AudioCtx = window.AudioContext || window.webkitAudioContext
+  const ctx = new AudioCtx()
+  try {
+    const decoded = await ctx.decodeAudioData(buf)
+    let sum = 0, total = 0
+    for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
+      const data = decoded.getChannelData(ch)
+      for (let i = 0; i < data.length; i++) { sum += data[i] * data[i]; total++ }
+    }
+    return total > 0 ? Math.sqrt(sum / total) : 0
+  } finally {
+    ctx.close()
   }
-  return Math.sqrt(sum / buf.length)
 }
 
 function ConfigurarDispositivo({ perfil, onBack }) {
@@ -155,18 +158,13 @@ function ConfigurarDispositivo({ perfil, onBack }) {
   const [enDescansoActual, setEnDescansoActual] = useState(false)
   const [ultimoEnvio,      setUltimoEnvio]      = useState(null)
   const [tick,             setTick]             = useState(0)
+  const [bloques,          setBloques]          = useState([])
 
-  const activeRef         = useRef(false)
-  const mrRef             = useRef(null)
-  const streamRef         = useRef(null)
-  const audioCtxRef       = useRef(null)
-  const analyserRef       = useRef(null)
-  const vadTimerRef       = useRef(null)
-  const allChunksRef      = useRef([])
-  const blockOpenRef      = useRef(false)
-  const blockStartTsRef   = useRef(null)
-  const lastVoiceTsRef    = useRef(null)
-  const sendingRef        = useRef(false)
+  const activeRef     = useRef(false)
+  const mrRef         = useRef(null)
+  const streamRef     = useRef(null)
+  const blockTimerRef = useRef(null)
+  const bloqueNumRef  = useRef(0)
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -193,74 +191,59 @@ function ConfigurarDispositivo({ perfil, onBack }) {
     return cur >= ih * 60 + im && cur < fh * 60 + fm
   }
 
-  // ── VAD + grabación ───────────────────────────────────────────────────────
+  // ── Grabación por bloques con filtro RMS ──────────────────────────────────
 
-  async function sendVoiceBlock(blobs) {
-    if (!blobs.length) return
+  async function grabarBloque(stream) {
+    if (!activeRef.current) return
+
+    bloqueNumRef.current++
+    const num = bloqueNumRef.current
+
+    setGrabando(true)
+    setProcesando(false)
+
+    const mr = new MediaRecorder(stream)
+    mrRef.current = mr
+    const chunks = []
+    mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+
+    await new Promise(resolve => {
+      mr.onstop = resolve
+      mr.start()
+      blockTimerRef.current = setTimeout(() => {
+        if (mr.state === 'recording') mr.stop()
+      }, MAX_BLOCK_MS)
+    })
+
+    clearTimeout(blockTimerRef.current)
+    if (!activeRef.current) { setGrabando(false); return }
+
+    setGrabando(false)
     setProcesando(true)
-    const mimeType = mrRef.current?.mimeType || 'audio/webm'
-    const blob = new Blob(blobs, { type: mimeType })
-    const form = new FormData()
-    form.append('audio', blob, 'audio.webm')
-    if (perfil) form.append('perfil', JSON.stringify(perfil))
-    try {
-      await fetch(`${API}/audio`, { method: 'POST', body: form })
-      setUltimoEnvio(new Date())
-    } catch (e) {
-      console.error('Error enviando bloque de voz:', e)
-    } finally {
-      setProcesando(false)
+
+    const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' })
+
+    let rms = 0
+    try { rms = await computeBlobRMS(blob) } catch { rms = 0 }
+
+    if (rms >= RMS_THRESHOLD) {
+      const form = new FormData()
+      form.append('audio', blob, 'audio.webm')
+      if (perfil) form.append('perfil', JSON.stringify(perfil))
+      try {
+        await fetch(`${API}/audio`, { method: 'POST', body: form })
+        setUltimoEnvio(new Date())
+        setBloques(prev => [...prev.slice(-4), { id: num, estado: 'enviado' }])
+      } catch (e) {
+        console.error('Error enviando bloque:', e)
+        setBloques(prev => [...prev.slice(-4), { id: num, estado: 'error' }])
+      }
+    } else {
+      setBloques(prev => [...prev.slice(-4), { id: num, estado: 'descartado' }])
     }
-  }
 
-  function startVAD() {
-    vadTimerRef.current = setInterval(() => {
-      if (!activeRef.current || !analyserRef.current) return
-
-      const rms     = getRMS(analyserRef.current)
-      const isVoice = rms > VAD_THRESHOLD
-      const now     = Date.now()
-
-      if (isVoice) {
-        lastVoiceTsRef.current = now
-        if (!blockOpenRef.current) {
-          blockOpenRef.current    = true
-          blockStartTsRef.current = now
-        }
-      }
-
-      if (blockOpenRef.current) {
-        const silenceMs = now - (lastVoiceTsRef.current ?? now)
-        const blockMs   = now - blockStartTsRef.current
-
-        const shouldSend = (silenceMs >= SILENCE_TIMEOUT_MS || blockMs >= MAX_BLOCK_MS)
-          && !sendingRef.current
-
-        if (shouldSend) {
-          const captureStart = blockStartTsRef.current - 500
-          const captureEnd   = (lastVoiceTsRef.current ?? now) + 500
-
-          blockOpenRef.current    = false
-          blockStartTsRef.current = null
-          lastVoiceTsRef.current  = null
-
-          const blobs = allChunksRef.current
-            .filter(c => c.ts >= captureStart && c.ts <= captureEnd)
-            .map(c => c.blob)
-            .filter(b => b.size > 0)
-
-          allChunksRef.current = allChunksRef.current.filter(c => c.ts > now - 5_000)
-
-          if (blobs.length > 0) {
-            sendingRef.current = true
-            sendVoiceBlock(blobs).finally(() => { sendingRef.current = false })
-          }
-        }
-      }
-
-      // Mantener buffer acotado
-      allChunksRef.current = allChunksRef.current.filter(c => c.ts > now - MAX_BLOCK_MS - 5_000)
-    }, VAD_INTERVAL_MS)
+    setProcesando(false)
+    grabarBloque(stream)
   }
 
   async function iniciarGrabacion() {
@@ -269,49 +252,18 @@ function ConfigurarDispositivo({ perfil, onBack }) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
       activeRef.current = true
-
-      const AudioCtx = window.AudioContext || window.webkitAudioContext
-      const audioCtx = new AudioCtx()
-      audioCtxRef.current = audioCtx
-      const source   = audioCtx.createMediaStreamSource(stream)
-      const analyser = audioCtx.createAnalyser()
-      analyser.fftSize = 2048
-      source.connect(analyser)
-      analyserRef.current = analyser
-
-      const mr = new MediaRecorder(stream)
-      mrRef.current = mr
-      allChunksRef.current    = []
-      blockOpenRef.current    = false
-      blockStartTsRef.current = null
-      lastVoiceTsRef.current  = null
-
-      mr.ondataavailable = e => {
-        if (e.data.size > 0) allChunksRef.current.push({ blob: e.data, ts: Date.now() })
-      }
-      mr.start(CHUNK_INTERVAL_MS)
-
-      startVAD()
-      setGrabando(true)
+      grabarBloque(stream)
     } catch (e) {
       console.error('No se pudo acceder al micrófono:', e)
-      activeRef.current = false
     }
   }
 
   function detenerGrabacion() {
     activeRef.current = false
-    clearInterval(vadTimerRef.current)
-    if (mrRef.current?.state !== 'inactive') mrRef.current?.stop()
+    clearTimeout(blockTimerRef.current)
+    if (mrRef.current?.state === 'recording') mrRef.current.stop()
     streamRef.current?.getTracks().forEach(t => t.stop())
-    if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close().catch(() => {})
-    streamRef.current       = null
-    analyserRef.current     = null
-    audioCtxRef.current     = null
-    allChunksRef.current    = []
-    blockOpenRef.current    = false
-    blockStartTsRef.current = null
-    lastVoiceTsRef.current  = null
+    streamRef.current = null
     setGrabando(false)
     setProcesando(false)
   }
@@ -346,10 +298,9 @@ function ConfigurarDispositivo({ perfil, onBack }) {
   useEffect(() => {
     return () => {
       activeRef.current = false
-      clearInterval(vadTimerRef.current)
-      if (mrRef.current?.state !== 'inactive') mrRef.current?.stop()
+      clearTimeout(blockTimerRef.current)
+      if (mrRef.current?.state === 'recording') mrRef.current.stop()
       streamRef.current?.getTracks().forEach(t => t.stop())
-      if (audioCtxRef.current?.state !== 'closed') audioCtxRef.current?.close().catch(() => {})
     }
   }, [])
 
@@ -399,6 +350,22 @@ function ConfigurarDispositivo({ perfil, onBack }) {
             <span className="cd-estado-envio">Último envío {desdeEnvio}</span>
           )}
         </div>
+
+        {/* Log de bloques */}
+        {bloques.length > 0 && (
+          <div className="cd-log">
+            {[...bloques].reverse().map(b => (
+              <div key={b.id} className={`cd-log-item cd-log-${b.estado}`}>
+                <span className="cd-log-dot" />
+                Bloque {b.id} — {
+                  b.estado === 'enviado'    ? 'enviado' :
+                  b.estado === 'error'      ? 'error al enviar' :
+                                             'descartado (silencio)'
+                }
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Toggle asistente activo */}
         <div className="cd-card">
