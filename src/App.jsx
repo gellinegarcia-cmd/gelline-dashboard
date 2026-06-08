@@ -2,20 +2,32 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import './App.css'
 
-const API = 'https://kiosco-ai.onrender.com'
+const API         = 'https://kiosco-ai.onrender.com'
 const STORAGE_KEY = 'kiosco_perfil'
-const BLOQUE_MS = 2 * 60 * 1000  // 2 minutos
+const DEVICE_KEY  = 'kiosco_dispositivo'
+const BLOQUE_MS   = 2 * 60 * 1000  // 2 minutos por bloque
 
 const TIPOS = ['kiosco', 'carnicería', 'verdulería', 'ropa', 'almacén', 'panadería', 'otro']
 const CLIENTES_OPTS = ['familias', 'estudiantes', 'oficinistas', 'vecinos del barrio', 'jubilados']
 
+const DEFAULT_DEVICE = {
+  activo:           false,
+  apertura:         '09:00',
+  cierre:           '20:00',
+  saludoAutomatico: false,
+}
+
 function getStoredPerfil() {
   try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')
-    return stored?.nombre ? stored : null
-  } catch {
-    return null
-  }
+    const s = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')
+    return s?.nombre ? s : null
+  } catch { return null }
+}
+
+function getStoredDevice() {
+  try {
+    return { ...DEFAULT_DEVICE, ...JSON.parse(localStorage.getItem(DEVICE_KEY) || '{}') }
+  } catch { return { ...DEFAULT_DEVICE } }
 }
 
 // ── Profile form (setup + edit) ──────────────────────────────────────────────
@@ -50,13 +62,8 @@ function ProfileForm({ initial = {}, onSave, onCancel }) {
     <form className="pf-form" onSubmit={handleSubmit}>
       <div className="pf-group">
         <label className="pf-label">1. ¿Cómo se llama tu negocio?</label>
-        <input
-          className="pf-input"
-          value={nombre}
-          onChange={e => setNombre(e.target.value)}
-          placeholder="Ej: Kiosco López, Almacén El Buen Precio..."
-          required
-        />
+        <input className="pf-input" value={nombre} onChange={e => setNombre(e.target.value)}
+          placeholder="Ej: Kiosco López, Almacén El Buen Precio..." required />
       </div>
 
       <div className="pf-group">
@@ -71,25 +78,17 @@ function ProfileForm({ initial = {}, onSave, onCancel }) {
 
       <div className="pf-group">
         <label className="pf-label">3. ¿En qué barrio/ciudad está?</label>
-        <input
-          className="pf-input"
-          value={barrio}
-          onChange={e => setBarrio(e.target.value)}
-          placeholder="Ej: Lomas de Zamora, Villa Urquiza..."
-          required
-        />
+        <input className="pf-input" value={barrio} onChange={e => setBarrio(e.target.value)}
+          placeholder="Ej: Lomas de Zamora, Villa Urquiza..." required />
       </div>
 
       <div className="pf-group">
         <label className="pf-label">4. ¿Cómo son tus clientes principales?</label>
         <div className="pf-chips">
           {CLIENTES_OPTS.map(opt => (
-            <button
-              key={opt}
-              type="button"
+            <button key={opt} type="button"
               className={`pf-chip ${clientes.includes(opt) ? 'active' : ''}`}
-              onClick={() => toggleCliente(opt)}
-            >
+              onClick={() => toggleCliente(opt)}>
               {opt}
             </button>
           ))}
@@ -119,9 +118,7 @@ function ProfileForm({ initial = {}, onSave, onCancel }) {
 
       <div className="pf-actions">
         {onCancel && (
-          <button type="button" className="pf-btn-cancel" onClick={onCancel}>
-            Cancelar
-          </button>
+          <button type="button" className="pf-btn-cancel" onClick={onCancel}>Cancelar</button>
         )}
         <button type="submit" className="pf-btn-save">
           {onCancel ? 'Guardar cambios' : 'Guardar y comenzar →'}
@@ -131,47 +128,44 @@ function ProfileForm({ initial = {}, onSave, onCancel }) {
   )
 }
 
-// ── Modo Negocio ─────────────────────────────────────────────────────────────
+// ── Configurar Dispositivo ────────────────────────────────────────────────────
 
-function ModoNegocio({ perfil, onBack }) {
-  const [status,      setStatus]      = useState('idle')   // 'idle' | 'grabando' | 'procesando'
+function ConfigurarDispositivo({ perfil, onBack }) {
+  const [config,      setConfig]      = useState(getStoredDevice)
+  const [grabando,    setGrabando]    = useState(false)   // bloque activo
+  const [procesando,  setProcesando]  = useState(false)   // enviando al server
   const [ultimoEnvio, setUltimoEnvio] = useState(null)
-  const [elapsed,     setElapsed]     = useState(0)        // segundos del bloque actual
-  const [tick,        setTick]        = useState(0)        // fuerza re-render del "hace X min"
+  const [elapsed,     setElapsed]     = useState(0)
+  const [tick,        setTick]        = useState(0)
 
-  const activeRef     = useRef(false)
-  const mrRef         = useRef(null)
-  const streamRef     = useRef(null)
-  const blockTimerRef = useRef(null)
+  const activeRef       = useRef(false)
+  const mrRef           = useRef(null)
+  const streamRef       = useRef(null)
+  const blockTimerRef   = useRef(null)
 
-  // Timer del bloque actual (actualiza cada segundo mientras graba)
-  useEffect(() => {
-    if (status !== 'grabando') { setElapsed(0); return }
-    const id = setInterval(() => setElapsed(s => s + 1), 1000)
-    return () => clearInterval(id)
-  }, [status])
+  // ── Helpers ──────────────────────────────────────────────────────────────
 
-  // Re-render cada 30s para "enviado hace X min"
-  useEffect(() => {
-    if (!ultimoEnvio) return
-    const id = setInterval(() => setTick(t => t + 1), 30_000)
-    return () => clearInterval(id)
-  }, [ultimoEnvio])
+  function saveConfig(updates) {
+    const next = { ...config, ...updates }
+    localStorage.setItem(DEVICE_KEY, JSON.stringify(next))
+    setConfig(next)
+  }
 
-  // Cleanup al desmontar
-  useEffect(() => {
-    return () => {
-      activeRef.current = false
-      clearTimeout(blockTimerRef.current)
-      mrRef.current?.state === 'recording' && mrRef.current.stop()
-      streamRef.current?.getTracks().forEach(t => t.stop())
-    }
-  }, [])
+  function esDentroHorario(cfg) {
+    const now = new Date()
+    const cur = now.getHours() * 60 + now.getMinutes()
+    const [ah, am] = cfg.apertura.split(':').map(Number)
+    const [ch, cm] = cfg.cierre.split(':').map(Number)
+    return cur >= ah * 60 + am && cur < ch * 60 + cm
+  }
+
+  // ── Grabación continua ────────────────────────────────────────────────────
 
   async function grabarBloque(stream) {
     if (!activeRef.current) return
 
-    setStatus('grabando')
+    setGrabando(true)
+    setProcesando(false)
 
     const mr = new MediaRecorder(stream)
     mrRef.current = mr
@@ -187,10 +181,10 @@ function ModoNegocio({ perfil, onBack }) {
     })
 
     clearTimeout(blockTimerRef.current)
+    if (!activeRef.current) { setGrabando(false); return }
 
-    if (!activeRef.current) return
-
-    setStatus('procesando')
+    setGrabando(false)
+    setProcesando(true)
 
     const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' })
     const form = new FormData()
@@ -204,33 +198,88 @@ function ModoNegocio({ perfil, onBack }) {
       console.error('Error enviando bloque:', e)
     }
 
+    setProcesando(false)
     grabarBloque(stream)
   }
 
-  async function activar() {
+  async function iniciarGrabacion() {
+    if (activeRef.current) return
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
       activeRef.current = true
       grabarBloque(stream)
-    } catch {
-      // El navegador bloqueó el micrófono
+    } catch (e) {
+      console.error('Error accediendo al micrófono:', e)
     }
   }
 
-  function detener() {
+  function detenerGrabacion() {
     activeRef.current = false
     clearTimeout(blockTimerRef.current)
     if (mrRef.current?.state === 'recording') mrRef.current.stop()
     streamRef.current?.getTracks().forEach(t => t.stop())
     streamRef.current = null
-    setStatus('idle')
+    setGrabando(false)
+    setProcesando(false)
   }
 
-  function formatElapsed(secs) {
-    const m = Math.floor(secs / 60)
-    const s = secs % 60
-    return `${m}:${s.toString().padStart(2, '0')}`
+  // ── Lógica de horario ─────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!config.activo) {
+      detenerGrabacion()
+      return
+    }
+
+    const check = () => {
+      if (esDentroHorario(config)) {
+        if (!activeRef.current) iniciarGrabacion()
+      } else {
+        if (activeRef.current) detenerGrabacion()
+      }
+    }
+
+    check()
+    const id = setInterval(check, 60_000)
+    return () => clearInterval(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.activo, config.apertura, config.cierre])
+
+  // Cleanup al salir de la pantalla
+  useEffect(() => {
+    return () => {
+      activeRef.current = false
+      clearTimeout(blockTimerRef.current)
+      if (mrRef.current?.state === 'recording') mrRef.current.stop()
+      streamRef.current?.getTracks().forEach(t => t.stop())
+    }
+  }, [])
+
+  // Timer del bloque actual
+  useEffect(() => {
+    if (!grabando) { setElapsed(0); return }
+    const id = setInterval(() => setElapsed(s => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [grabando])
+
+  // Re-render cada 30s para "hace X min"
+  useEffect(() => {
+    if (!ultimoEnvio) return
+    const id = setInterval(() => setTick(t => t + 1), 30_000)
+    return () => clearInterval(id)
+  }, [ultimoEnvio])
+
+  // ── Estado actual ─────────────────────────────────────────────────────────
+
+  function getEstado() {
+    if (!config.activo)          return { label: 'Inactivo',        cls: 'inactivo' }
+    if (grabando || procesando)  return { label: 'Escuchando',      cls: 'escuchando' }
+    return                              { label: 'Fuera de horario', cls: 'fuera' }
+  }
+
+  function formatElapsed(s) {
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
   }
 
   function formatDesdeEnvio(fecha) {
@@ -239,58 +288,92 @@ function ModoNegocio({ perfil, onBack }) {
     return min === 0 ? 'hace menos de 1 min' : `hace ${min} min`
   }
 
-  const isActive = status !== 'idle'
+  const estado     = getEstado()
   const desdeEnvio = formatDesdeEnvio(ultimoEnvio)
-  // tick es usado para forzar re-render en el intervalo de 30s
   void tick
 
   return (
-    <div className="mn-screen">
-      <header className="mn-header">
-        <button className="mn-back" onClick={() => { detener(); onBack() }}>
+    <div className="cd-screen">
+      <header className="cd-header">
+        <button className="cd-back" onClick={() => { detenerGrabacion(); onBack() }}>
           ← Volver
         </button>
-        <span className="mn-title">Modo Negocio</span>
+        <span className="cd-title">Configurar dispositivo</span>
         <span />
       </header>
 
-      <div className="mn-content">
-        <div className={`mn-card ${isActive ? 'active' : ''}`}>
-          {status === 'idle' && (
-            <>
-              <span className="mn-idle-icon">🎙️</span>
-              <p className="mn-idle-text">Listo para escuchar</p>
-              <p className="mn-idle-sub">Grabará bloques de 2 min y los enviará automáticamente</p>
-            </>
-          )}
+      <div className="cd-content">
 
-          {status === 'grabando' && (
-            <>
-              <div className="mn-dot" />
-              <p className="mn-status-text">Escuchando...</p>
-              <p className="mn-timer">{formatElapsed(elapsed)}</p>
-              {desdeEnvio && <p className="mn-last-sent">Último envío {desdeEnvio}</p>}
-            </>
+        {/* Estado actual */}
+        <div className={`cd-estado ${estado.cls}`}>
+          <span className="cd-estado-dot" />
+          <span className="cd-estado-label">{estado.label}</span>
+          {grabando && elapsed > 0 && (
+            <span className="cd-estado-timer">{formatElapsed(elapsed)}</span>
           )}
-
-          {status === 'procesando' && (
-            <>
-              <div className="mn-spinner" />
-              <p className="mn-status-text">Procesando...</p>
-              {desdeEnvio && <p className="mn-last-sent">Último envío {desdeEnvio}</p>}
-            </>
+          {desdeEnvio && (
+            <span className="cd-estado-envio">Último envío {desdeEnvio}</span>
           )}
         </div>
 
-        {isActive ? (
-          <button className="mn-stop-btn" onClick={detener}>
-            Detener escucha
-          </button>
-        ) : (
-          <button className="mn-start-btn" onClick={activar}>
-            Activar escucha
-          </button>
-        )}
+        {/* Toggle asistente activo */}
+        <div className="cd-card">
+          <div className="cd-row">
+            <div className="cd-row-info">
+              <span className="cd-row-label">Asistente activo</span>
+              <span className="cd-row-sub">
+                Activa la escucha automática según el horario configurado
+              </span>
+            </div>
+            <button
+              className={`cd-toggle ${config.activo ? 'on' : ''}`}
+              onClick={() => saveConfig({ activo: !config.activo })}
+              aria-label="Activar asistente"
+            />
+          </div>
+        </div>
+
+        {/* Horario */}
+        <div className="cd-card">
+          <p className="cd-card-title">Horario</p>
+          <div className="cd-time-row">
+            <label className="cd-time-label">Hora de apertura</label>
+            <input
+              className="cd-time-input"
+              type="time"
+              value={config.apertura}
+              onChange={e => saveConfig({ apertura: e.target.value })}
+            />
+          </div>
+          <div className="cd-sep" />
+          <div className="cd-time-row">
+            <label className="cd-time-label">Hora de cierre</label>
+            <input
+              className="cd-time-input"
+              type="time"
+              value={config.cierre}
+              onChange={e => saveConfig({ cierre: e.target.value })}
+            />
+          </div>
+        </div>
+
+        {/* Toggle saludo automático */}
+        <div className="cd-card">
+          <div className="cd-row">
+            <div className="cd-row-info">
+              <span className="cd-row-label">Saludo automático al abrir</span>
+              <span className="cd-row-sub">
+                Reproduce un saludo cuando empieza el horario
+              </span>
+            </div>
+            <button
+              className={`cd-toggle ${config.saludoAutomatico ? 'on' : ''}`}
+              onClick={() => saveConfig({ saludoAutomatico: !config.saludoAutomatico })}
+              aria-label="Activar saludo automático"
+            />
+          </div>
+        </div>
+
       </div>
     </div>
   )
@@ -299,15 +382,15 @@ function ModoNegocio({ perfil, onBack }) {
 // ── Main app ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [perfil,      setPerfil]      = useState(getStoredPerfil)
-  const [view,        setView]        = useState('main')   // 'main' | 'modo'
-  const [showEdit,    setShowEdit]    = useState(false)
-  const [decisiones,  setDecisiones]  = useState(null)
-  const [loading,     setLoading]     = useState(false)
-  const [recording,   setRecording]   = useState(false)
-  const [lastUpdate,  setLastUpdate]  = useState(null)
-  const [error,       setError]       = useState(null)
-  const [textInput,   setTextInput]   = useState('')
+  const [perfil,     setPerfil]     = useState(getStoredPerfil)
+  const [view,       setView]       = useState('main')   // 'main' | 'dispositivo'
+  const [showEdit,   setShowEdit]   = useState(false)
+  const [decisiones, setDecisiones] = useState(null)
+  const [loading,    setLoading]    = useState(false)
+  const [recording,  setRecording]  = useState(false)
+  const [lastUpdate, setLastUpdate] = useState(null)
+  const [error,      setError]      = useState(null)
+  const [textInput,  setTextInput]  = useState('')
 
   const mediaRecorderRef = useRef(null)
   const chunksRef        = useRef([])
@@ -347,7 +430,7 @@ export default function App() {
       streamRef.current = stream
       const mr = new MediaRecorder(stream)
       chunksRef.current = []
-      mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+      mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
       mr.start()
       mediaRecorderRef.current = mr
       setRecording(true)
@@ -392,9 +475,9 @@ export default function App() {
     setLoading(true)
     try {
       const res  = await fetch(`${API}/texto`, {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texto, ...(perfil && { perfil }) }),
+        body:    JSON.stringify({ texto, ...(perfil && { perfil }) }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Error del servidor')
@@ -426,10 +509,10 @@ export default function App() {
     )
   }
 
-  // ── Modo Negocio screen ─────────────────────────────────────────────────────
+  // ── Configurar Dispositivo screen ───────────────────────────────────────────
 
-  if (view === 'modo') {
-    return <ModoNegocio perfil={perfil} onBack={() => setView('main')} />
+  if (view === 'dispositivo') {
+    return <ConfigurarDispositivo perfil={perfil} onBack={() => setView('main')} />
   }
 
   // ── Main screen ─────────────────────────────────────────────────────────────
@@ -438,11 +521,8 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div className="header-main">
-          <button
-            className="modo-nav-btn"
-            onClick={() => setView('modo')}
-          >
-            Modo Negocio
+          <button className="cd-nav-btn" onClick={() => setView('dispositivo')}>
+            ⚙ Configurar
           </button>
           <h1>{perfil.nombre}</h1>
           <button

@@ -169,9 +169,9 @@
 
 .pf-btn-cancel:hover { background: #262626; }
 
-/* ── Modo Negocio nav btn (header) ──────────────*/
+/* ── Configurar Dispositivo nav btn (header) ─── */
 
-.modo-nav-btn {
+.cd-nav-btn {
   position: absolute;
   left: 0;
   background: none;
@@ -187,21 +187,21 @@
   transition: all 0.15s;
 }
 
-.modo-nav-btn:hover {
+.cd-nav-btn:hover {
   border-color: #7c3aed;
   background: rgba(124, 58, 237, 0.08);
 }
 
-/* ── Modo Negocio screen ─────────────────────── */
+/* ── Configurar Dispositivo screen ───────────── */
 
-.mn-screen {
+.cd-screen {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
   background: #0d0d0d;
 }
 
-.mn-header {
+.cd-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -209,7 +209,7 @@
   border-bottom: 1px solid #1f1f1f;
 }
 
-.mn-back {
+.cd-back {
   background: none;
   border: none;
   color: #7c3aed;
@@ -220,130 +220,192 @@
   padding: 4px 0;
 }
 
-.mn-title {
-  font-size: 18px;
+.cd-title {
+  font-size: 17px;
   font-weight: 700;
   color: #f1f5f9;
 }
 
-.mn-content {
+.cd-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 24px;
-  gap: 32px;
+  padding: 24px;
+  gap: 14px;
+  max-width: 480px;
+  margin: 0 auto;
+  width: 100%;
 }
 
-.mn-card {
-  width: 100%;
+/* Estado badge */
+
+.cd-estado {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-radius: 16px;
   background: #141414;
   border: 1px solid #1f1f1f;
-  border-radius: 28px;
-  padding: 56px 32px;
+}
+
+.cd-estado-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #374151;
+  transition: background 0.3s;
+}
+
+.cd-estado.escuchando {
+  border-color: rgba(168, 85, 247, 0.3);
+  box-shadow: 0 0 20px rgba(124, 58, 237, 0.08);
+}
+.cd-estado.escuchando .cd-estado-dot {
+  background: #a855f7;
+  animation: blink 1.4s ease-in-out infinite;
+}
+.cd-estado.fuera .cd-estado-dot  { background: #f59e0b; }
+.cd-estado.inactivo .cd-estado-dot { background: #374151; }
+
+.cd-estado-label {
+  font-size: 17px;
+  font-weight: 700;
+  color: #f1f5f9;
+  flex: 1;
+}
+
+.cd-estado-timer {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #a855f7;
+}
+
+.cd-estado-envio {
+  font-size: 12px;
+  color: #4b5563;
+}
+
+/* Cards */
+
+.cd-card {
+  background: #141414;
+  border: 1px solid #1f1f1f;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.cd-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #374151;
+  padding: 16px 20px 0;
+}
+
+/* Row (toggle rows) */
+
+.cd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  gap: 16px;
+}
+
+.cd-row-info {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  min-height: 260px;
-  justify-content: center;
-  text-align: center;
-  transition: border-color 0.3s, box-shadow 0.3s;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
 }
 
-.mn-card.active {
-  border-color: #7c3aed;
-  box-shadow: 0 0 48px rgba(124, 58, 237, 0.12);
-}
-
-.mn-idle-icon {
-  font-size: 52px;
-}
-
-.mn-idle-text {
-  font-size: 24px;
+.cd-row-label {
+  font-size: 16px;
   font-weight: 600;
-  color: #6b7280;
-}
-
-.mn-idle-sub {
-  font-size: 14px;
-  color: #374151;
-  max-width: 240px;
-  line-height: 1.5;
-}
-
-.mn-dot {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #ef4444;
-  animation: blink 1s ease-in-out infinite;
-}
-
-.mn-status-text {
-  font-size: 30px;
-  font-weight: 700;
   color: #f1f5f9;
 }
 
-.mn-timer {
-  font-size: 56px;
-  font-weight: 700;
-  color: #a855f7;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -2px;
-  line-height: 1;
-}
-
-.mn-last-sent {
-  font-size: 15px;
+.cd-row-sub {
+  font-size: 13px;
   color: #4b5563;
-  margin-top: 4px;
+  line-height: 1.4;
 }
 
-.mn-spinner {
-  width: 42px;
-  height: 42px;
-  border: 3px solid #1f1f1f;
-  border-top-color: #7c3aed;
-  border-radius: 50%;
-  animation: spin 0.75s linear infinite;
-}
+/* Toggle switch */
 
-.mn-start-btn,
-.mn-stop-btn {
-  width: 100%;
-  padding: 24px;
+.cd-toggle {
+  width: 52px;
+  height: 30px;
+  border-radius: 15px;
   border: none;
-  border-radius: 20px;
-  font-size: 22px;
-  font-weight: 700;
-  font-family: inherit;
+  background: #2a2a2a;
+  position: relative;
   cursor: pointer;
-  transition: opacity 0.15s, transform 0.1s;
+  flex-shrink: 0;
+  transition: background 0.25s;
 }
 
-.mn-start-btn {
-  background: linear-gradient(135deg, #6d28d9, #a855f7);
-  color: white;
-  box-shadow: 0 4px 28px rgba(124, 58, 237, 0.35);
+.cd-toggle::after {
+  content: '';
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #4b5563;
+  top: 3px;
+  left: 3px;
+  transition: transform 0.25s, background 0.25s;
 }
 
-.mn-start-btn:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
+.cd-toggle.on {
+  background: rgba(124, 58, 237, 0.25);
 }
 
-.mn-stop-btn {
-  background: transparent;
-  color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+.cd-toggle.on::after {
+  transform: translateX(22px);
+  background: #a855f7;
 }
 
-.mn-stop-btn:hover {
-  background: rgba(239, 68, 68, 0.08);
+/* Time picker rows */
+
+.cd-time-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+}
+
+.cd-time-label {
+  font-size: 15px;
+  font-weight: 500;
+  color: #cbd5e1;
+}
+
+.cd-time-input {
+  background: #0d0d0d;
+  border: 1px solid #1f1f1f;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 16px;
+  font-family: inherit;
+  font-weight: 600;
+  color: #f1f5f9;
+  outline: none;
+  transition: border-color 0.2s;
+  color-scheme: dark;
+}
+
+.cd-time-input:focus { border-color: #7c3aed; }
+
+.cd-sep {
+  height: 1px;
+  background: #1f1f1f;
+  margin: 0 20px;
 }
 
 /* ── Header settings btn ─────────────────────── */
