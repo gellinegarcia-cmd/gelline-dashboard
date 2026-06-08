@@ -169,6 +169,183 @@
 
 .pf-btn-cancel:hover { background: #262626; }
 
+/* ── Modo Negocio nav btn (header) ──────────────*/
+
+.modo-nav-btn {
+  position: absolute;
+  left: 0;
+  background: none;
+  border: 1px solid #1f1f1f;
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  color: #a855f7;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.modo-nav-btn:hover {
+  border-color: #7c3aed;
+  background: rgba(124, 58, 237, 0.08);
+}
+
+/* ── Modo Negocio screen ─────────────────────── */
+
+.mn-screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: #0d0d0d;
+}
+
+.mn-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #1f1f1f;
+}
+
+.mn-back {
+  background: none;
+  border: none;
+  color: #7c3aed;
+  font-size: 16px;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.mn-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.mn-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  gap: 32px;
+}
+
+.mn-card {
+  width: 100%;
+  background: #141414;
+  border: 1px solid #1f1f1f;
+  border-radius: 28px;
+  padding: 56px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  min-height: 260px;
+  justify-content: center;
+  text-align: center;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.mn-card.active {
+  border-color: #7c3aed;
+  box-shadow: 0 0 48px rgba(124, 58, 237, 0.12);
+}
+
+.mn-idle-icon {
+  font-size: 52px;
+}
+
+.mn-idle-text {
+  font-size: 24px;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.mn-idle-sub {
+  font-size: 14px;
+  color: #374151;
+  max-width: 240px;
+  line-height: 1.5;
+}
+
+.mn-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: blink 1s ease-in-out infinite;
+}
+
+.mn-status-text {
+  font-size: 30px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.mn-timer {
+  font-size: 56px;
+  font-weight: 700;
+  color: #a855f7;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -2px;
+  line-height: 1;
+}
+
+.mn-last-sent {
+  font-size: 15px;
+  color: #4b5563;
+  margin-top: 4px;
+}
+
+.mn-spinner {
+  width: 42px;
+  height: 42px;
+  border: 3px solid #1f1f1f;
+  border-top-color: #7c3aed;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+
+.mn-start-btn,
+.mn-stop-btn {
+  width: 100%;
+  padding: 24px;
+  border: none;
+  border-radius: 20px;
+  font-size: 22px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.mn-start-btn {
+  background: linear-gradient(135deg, #6d28d9, #a855f7);
+  color: white;
+  box-shadow: 0 4px 28px rgba(124, 58, 237, 0.35);
+}
+
+.mn-start-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.mn-stop-btn {
+  background: transparent;
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.mn-stop-btn:hover {
+  background: rgba(239, 68, 68, 0.08);
+}
+
 /* ── Header settings btn ─────────────────────── */
 
 .header-main {

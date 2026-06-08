@@ -4,6 +4,7 @@ import './App.css'
 
 const API = 'https://kiosco-ai.onrender.com'
 const STORAGE_KEY = 'kiosco_perfil'
+const BLOQUE_MS = 2 * 60 * 1000  // 2 minutos
 
 const TIPOS = ['kiosco', 'carnicería', 'verdulería', 'ropa', 'almacén', 'panadería', 'otro']
 const CLIENTES_OPTS = ['familias', 'estudiantes', 'oficinistas', 'vecinos del barrio', 'jubilados']
@@ -130,17 +131,183 @@ function ProfileForm({ initial = {}, onSave, onCancel }) {
   )
 }
 
+// ── Modo Negocio ─────────────────────────────────────────────────────────────
+
+function ModoNegocio({ perfil, onBack }) {
+  const [status,      setStatus]      = useState('idle')   // 'idle' | 'grabando' | 'procesando'
+  const [ultimoEnvio, setUltimoEnvio] = useState(null)
+  const [elapsed,     setElapsed]     = useState(0)        // segundos del bloque actual
+  const [tick,        setTick]        = useState(0)        // fuerza re-render del "hace X min"
+
+  const activeRef     = useRef(false)
+  const mrRef         = useRef(null)
+  const streamRef     = useRef(null)
+  const blockTimerRef = useRef(null)
+
+  // Timer del bloque actual (actualiza cada segundo mientras graba)
+  useEffect(() => {
+    if (status !== 'grabando') { setElapsed(0); return }
+    const id = setInterval(() => setElapsed(s => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [status])
+
+  // Re-render cada 30s para "enviado hace X min"
+  useEffect(() => {
+    if (!ultimoEnvio) return
+    const id = setInterval(() => setTick(t => t + 1), 30_000)
+    return () => clearInterval(id)
+  }, [ultimoEnvio])
+
+  // Cleanup al desmontar
+  useEffect(() => {
+    return () => {
+      activeRef.current = false
+      clearTimeout(blockTimerRef.current)
+      mrRef.current?.state === 'recording' && mrRef.current.stop()
+      streamRef.current?.getTracks().forEach(t => t.stop())
+    }
+  }, [])
+
+  async function grabarBloque(stream) {
+    if (!activeRef.current) return
+
+    setStatus('grabando')
+
+    const mr = new MediaRecorder(stream)
+    mrRef.current = mr
+    const chunks = []
+    mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+
+    await new Promise(resolve => {
+      mr.onstop = resolve
+      mr.start()
+      blockTimerRef.current = setTimeout(() => {
+        if (mr.state === 'recording') mr.stop()
+      }, BLOQUE_MS)
+    })
+
+    clearTimeout(blockTimerRef.current)
+
+    if (!activeRef.current) return
+
+    setStatus('procesando')
+
+    const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' })
+    const form = new FormData()
+    form.append('audio', blob, 'audio.webm')
+    if (perfil) form.append('perfil', JSON.stringify(perfil))
+
+    try {
+      await fetch(`${API}/audio`, { method: 'POST', body: form })
+      setUltimoEnvio(new Date())
+    } catch (e) {
+      console.error('Error enviando bloque:', e)
+    }
+
+    grabarBloque(stream)
+  }
+
+  async function activar() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream
+      activeRef.current = true
+      grabarBloque(stream)
+    } catch {
+      // El navegador bloqueó el micrófono
+    }
+  }
+
+  function detener() {
+    activeRef.current = false
+    clearTimeout(blockTimerRef.current)
+    if (mrRef.current?.state === 'recording') mrRef.current.stop()
+    streamRef.current?.getTracks().forEach(t => t.stop())
+    streamRef.current = null
+    setStatus('idle')
+  }
+
+  function formatElapsed(secs) {
+    const m = Math.floor(secs / 60)
+    const s = secs % 60
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
+  function formatDesdeEnvio(fecha) {
+    if (!fecha) return null
+    const min = Math.floor((Date.now() - fecha) / 60_000)
+    return min === 0 ? 'hace menos de 1 min' : `hace ${min} min`
+  }
+
+  const isActive = status !== 'idle'
+  const desdeEnvio = formatDesdeEnvio(ultimoEnvio)
+  // tick es usado para forzar re-render en el intervalo de 30s
+  void tick
+
+  return (
+    <div className="mn-screen">
+      <header className="mn-header">
+        <button className="mn-back" onClick={() => { detener(); onBack() }}>
+          ← Volver
+        </button>
+        <span className="mn-title">Modo Negocio</span>
+        <span />
+      </header>
+
+      <div className="mn-content">
+        <div className={`mn-card ${isActive ? 'active' : ''}`}>
+          {status === 'idle' && (
+            <>
+              <span className="mn-idle-icon">🎙️</span>
+              <p className="mn-idle-text">Listo para escuchar</p>
+              <p className="mn-idle-sub">Grabará bloques de 2 min y los enviará automáticamente</p>
+            </>
+          )}
+
+          {status === 'grabando' && (
+            <>
+              <div className="mn-dot" />
+              <p className="mn-status-text">Escuchando...</p>
+              <p className="mn-timer">{formatElapsed(elapsed)}</p>
+              {desdeEnvio && <p className="mn-last-sent">Último envío {desdeEnvio}</p>}
+            </>
+          )}
+
+          {status === 'procesando' && (
+            <>
+              <div className="mn-spinner" />
+              <p className="mn-status-text">Procesando...</p>
+              {desdeEnvio && <p className="mn-last-sent">Último envío {desdeEnvio}</p>}
+            </>
+          )}
+        </div>
+
+        {isActive ? (
+          <button className="mn-stop-btn" onClick={detener}>
+            Detener escucha
+          </button>
+        ) : (
+          <button className="mn-start-btn" onClick={activar}>
+            Activar escucha
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Main app ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [perfil,     setPerfil]     = useState(getStoredPerfil)
-  const [showEdit,   setShowEdit]   = useState(false)
-  const [decisiones, setDecisiones] = useState(null)
-  const [loading,    setLoading]    = useState(false)
-  const [recording,  setRecording]  = useState(false)
-  const [lastUpdate, setLastUpdate] = useState(null)
-  const [error,      setError]      = useState(null)
-  const [textInput,  setTextInput]  = useState('')
+  const [perfil,      setPerfil]      = useState(getStoredPerfil)
+  const [view,        setView]        = useState('main')   // 'main' | 'modo'
+  const [showEdit,    setShowEdit]    = useState(false)
+  const [decisiones,  setDecisiones]  = useState(null)
+  const [loading,     setLoading]     = useState(false)
+  const [recording,   setRecording]   = useState(false)
+  const [lastUpdate,  setLastUpdate]  = useState(null)
+  const [error,       setError]       = useState(null)
+  const [textInput,   setTextInput]   = useState('')
 
   const mediaRecorderRef = useRef(null)
   const chunksRef        = useRef([])
@@ -259,12 +426,24 @@ export default function App() {
     )
   }
 
+  // ── Modo Negocio screen ─────────────────────────────────────────────────────
+
+  if (view === 'modo') {
+    return <ModoNegocio perfil={perfil} onBack={() => setView('main')} />
+  }
+
   // ── Main screen ─────────────────────────────────────────────────────────────
 
   return (
     <div className="app">
       <header className="header">
         <div className="header-main">
+          <button
+            className="modo-nav-btn"
+            onClick={() => setView('modo')}
+          >
+            Modo Negocio
+          </button>
           <h1>{perfil.nombre}</h1>
           <button
             className="settings-btn"
