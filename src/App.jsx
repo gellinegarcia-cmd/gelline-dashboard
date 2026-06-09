@@ -152,13 +152,13 @@ async function computeBlobRMS(blob) {
 }
 
 function ConfigurarDispositivo({ perfil, onBack }) {
-  const [config,           setConfig]           = useState(getStoredDevice)
-  const [grabando,         setGrabando]         = useState(false)
-  const [procesando,       setProcesando]       = useState(false)
-  const [enDescansoActual, setEnDescansoActual] = useState(false)
-  const [ultimoEnvio,      setUltimoEnvio]      = useState(null)
-  const [tick,             setTick]             = useState(0)
-  const [bloques,          setBloques]          = useState([])
+  const [config,      setConfig]      = useState(getStoredDevice)
+  const [debeGrabar,  setDebeGrabar]  = useState(false)
+  const [grabando,    setGrabando]    = useState(false)
+  const [procesando,  setProcesando]  = useState(false)
+  const [ultimoEnvio, setUltimoEnvio] = useState(null)
+  const [tick,        setTick]        = useState(0)
+  const [bloques,     setBloques]     = useState([])
 
   const activeRef     = useRef(false)
   const mrRef         = useRef(null)
@@ -166,12 +166,56 @@ function ConfigurarDispositivo({ perfil, onBack }) {
   const blockTimerRef = useRef(null)
   const bloqueNumRef  = useRef(0)
 
+  // ── Carga inicial desde servidor ──────────────────────────────────────────
+
+  useEffect(() => {
+    async function cargarConfig() {
+      try {
+        const res = await fetch(`${API}/config`)
+        if (!res.ok) return
+        const data = await res.json()
+        const next = {
+          activo:           data.activo           ?? false,
+          apertura:         data.apertura         ?? '09:00',
+          cierre:           data.cierre           ?? '20:00',
+          descanso:         data.descanso         ?? false,
+          descansoInicio:   data.descanso_inicio  ?? '13:00',
+          descansoFin:      data.descanso_fin     ?? '14:00',
+          saludoAutomatico: data.saludo_automatico ?? false,
+        }
+        localStorage.setItem(DEVICE_KEY, JSON.stringify(next))
+        setConfig(next)
+        setDebeGrabar(data.debe_grabar ?? false)
+      } catch { /* usa fallback de localStorage */ }
+    }
+    cargarConfig()
+  }, [])
+
   // ── Helpers ──────────────────────────────────────────────────────────────
 
-  function saveConfig(updates) {
+  async function saveConfig(updates) {
     const next = { ...config, ...updates }
     localStorage.setItem(DEVICE_KEY, JSON.stringify(next))
     setConfig(next)
+    try {
+      const res = await fetch(`${API}/config`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          activo:            next.activo,
+          apertura:          next.apertura,
+          cierre:            next.cierre,
+          descanso:          next.descanso,
+          descanso_inicio:   next.descansoInicio,
+          descanso_fin:      next.descansoFin,
+          saludo_automatico: next.saludoAutomatico,
+        }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setDebeGrabar(data.debe_grabar ?? false)
+      }
+    } catch { /* ignora errores de red */ }
   }
 
   function esDentroHorario(cfg) {
@@ -273,18 +317,19 @@ function ConfigurarDispositivo({ perfil, onBack }) {
   useEffect(() => {
     if (!config.activo) {
       detenerGrabacion()
+      setDebeGrabar(false)
       return
     }
 
     const check = () => {
-      const dentro     = esDentroHorario(config)
-      const descanso   = esEnDescanso(config)
-      const debeGrabar = dentro && !descanso
+      const dentro    = esDentroHorario(config)
+      const descanso  = esEnDescanso(config)
+      const shouldGrab = dentro && !descanso
 
-      setEnDescansoActual(dentro && descanso)
+      setDebeGrabar(shouldGrab)
 
-      if (debeGrabar && !activeRef.current) iniciarGrabacion()
-      else if (!debeGrabar && activeRef.current) detenerGrabacion()
+      if (shouldGrab && !activeRef.current) iniciarGrabacion()
+      else if (!shouldGrab && activeRef.current) detenerGrabacion()
     }
 
     check()
@@ -314,10 +359,10 @@ function ConfigurarDispositivo({ perfil, onBack }) {
   // ── Estado actual ─────────────────────────────────────────────────────────
 
   function getEstado() {
-    if (!config.activo)         return { label: 'Inactivo',        cls: 'inactivo' }
-    if (grabando || procesando) return { label: 'Escuchando',      cls: 'escuchando' }
-    if (enDescansoActual)       return { label: 'En descanso',     cls: 'descanso' }
-    return                             { label: 'Fuera de horario', cls: 'fuera' }
+    if (!config.activo)       return { label: 'Inactivo',        cls: 'inactivo' }
+    if (debeGrabar)           return { label: 'Escuchando',      cls: 'escuchando' }
+    if (esEnDescanso(config)) return { label: 'En descanso',     cls: 'descanso' }
+    return                           { label: 'Fuera de horario', cls: 'fuera' }
   }
 
   function formatDesdeEnvio(fecha) {
