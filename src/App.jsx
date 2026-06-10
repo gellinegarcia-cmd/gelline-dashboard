@@ -165,6 +165,8 @@ function ConfigurarDispositivo({ perfil, onBack }) {
   const streamRef     = useRef(null)
   const blockTimerRef = useRef(null)
   const bloqueNumRef  = useRef(0)
+  const configRef     = useRef(config)
+  configRef.current   = config   // siempre apunta al config del render actual
 
   // ── Carga inicial desde servidor ──────────────────────────────────────────
 
@@ -194,7 +196,7 @@ function ConfigurarDispositivo({ perfil, onBack }) {
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   async function saveConfig(updates) {
-    const next = { ...config, ...updates }
+    const next = { ...configRef.current, ...updates }
     localStorage.setItem(DEVICE_KEY, JSON.stringify(next))
     setConfig(next)
     try {
@@ -423,7 +425,7 @@ function ConfigurarDispositivo({ perfil, onBack }) {
             </div>
             <button
               className={`cd-toggle ${config.activo ? 'on' : ''}`}
-              onClick={() => saveConfig({ activo: !config.activo })}
+              onClick={() => saveConfig({ activo: !configRef.current.activo })}
               aria-label="Activar asistente"
             />
           </div>
