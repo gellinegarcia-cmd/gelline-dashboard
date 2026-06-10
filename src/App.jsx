@@ -353,14 +353,9 @@ export default function App() {
   const [showEdit,   setShowEdit]   = useState(false)
   const [decisiones, setDecisiones] = useState(null)
   const [loading,    setLoading]    = useState(false)
-  const [recording,  setRecording]  = useState(false)
   const [lastUpdate, setLastUpdate] = useState(null)
   const [error,      setError]      = useState(null)
   const [textInput,  setTextInput]  = useState('')
-
-  const mediaRecorderRef = useRef(null)
-  const chunksRef        = useRef([])
-  const streamRef        = useRef(null)
 
   function savePerfil(p) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(p))
@@ -387,51 +382,6 @@ export default function App() {
   useEffect(() => {
     if (perfil) fetchDecisiones()
   }, [perfil, fetchDecisiones])
-
-  const startRecording = async () => {
-    if (loading || recording) return
-    setError(null)
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
-      const mr = new MediaRecorder(stream)
-      chunksRef.current = []
-      mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
-      mr.start()
-      mediaRecorderRef.current = mr
-      setRecording(true)
-    } catch {
-      setError('No se pudo acceder al micrófono.')
-    }
-  }
-
-  const stopRecording = async () => {
-    if (!recording || !mediaRecorderRef.current) return
-    setRecording(false)
-    await new Promise(resolve => {
-      mediaRecorderRef.current.onstop = resolve
-      mediaRecorderRef.current.stop()
-    })
-    streamRef.current?.getTracks().forEach(t => t.stop())
-
-    const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-    const form = new FormData()
-    form.append('audio', blob, 'audio.webm')
-    if (perfil) form.append('perfil', JSON.stringify(perfil))
-
-    setLoading(true)
-    try {
-      const res  = await fetch(`${API}/audio`, { method: 'POST', body: form })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Error del servidor')
-      setDecisiones(data.decisiones)
-      setLastUpdate(new Date())
-    } catch (e) {
-      setError(e.message || 'Error al procesar el audio.')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const sendText = async () => {
     const texto = textInput.trim()
@@ -532,24 +482,9 @@ export default function App() {
       {error && <div className="error-msg">{error}</div>}
 
       <div className="controls">
-        <div className="mic-section">
-          <button
-            className={`mic-btn ${recording ? 'recording' : ''}`}
-            onMouseDown={startRecording}
-            onMouseUp={stopRecording}
-            onTouchStart={e => { e.preventDefault(); startRecording() }}
-            onTouchEnd={e   => { e.preventDefault(); stopRecording()  }}
-            disabled={loading}
-            aria-label="Grabar audio"
-          >
-            🎙️
-          </button>
-          <span className={`mic-label ${recording ? 'recording' : ''}`}>
-            {recording ? '● Grabando — soltá para enviar' : 'Consultá por voz'}
-          </span>
+        <div className="mic-section mic-disabled">
+          <span className="mic-soon">Grabación por voz próximamente</span>
         </div>
-
-        <div className="divider"><span>o escribí tu consulta</span></div>
 
         <div className="text-input-row">
           <input

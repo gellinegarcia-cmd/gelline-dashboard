@@ -797,6 +797,16 @@
 
 .mic-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
+.mic-section.mic-disabled {
+  justify-content: center;
+}
+
+.mic-soon {
+  font-size: 13px;
+  color: #6b7280;
+  font-style: italic;
+}
+
 .mic-label {
   font-size: 12px;
   font-weight: 500;
