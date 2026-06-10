@@ -5,8 +5,6 @@ import './App.css'
 const API         = 'https://kiosco-ai.onrender.com'
 const STORAGE_KEY = 'kiosco_perfil'
 const DEVICE_KEY  = 'kiosco_dispositivo'
-const MAX_BLOCK_MS  = 60_000
-const RMS_THRESHOLD = 0.005
 
 const TIPOS = ['kiosco', 'carnicería', 'verdulería', 'ropa', 'almacén', 'panadería', 'otro']
 const CLIENTES_OPTS = ['familias', 'estudiantes', 'oficinistas', 'vecinos del barrio', 'jubilados']
@@ -134,39 +132,12 @@ function ProfileForm({ initial = {}, onSave, onCancel }) {
 
 // ── Configurar Dispositivo ────────────────────────────────────────────────────
 
-async function computeBlobRMS(blob) {
-  const buf = await blob.arrayBuffer()
-  const AudioCtx = window.AudioContext || window.webkitAudioContext
-  const ctx = new AudioCtx()
-  try {
-    const decoded = await ctx.decodeAudioData(buf)
-    let sum = 0, total = 0
-    for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
-      const data = decoded.getChannelData(ch)
-      for (let i = 0; i < data.length; i++) { sum += data[i] * data[i]; total++ }
-    }
-    return total > 0 ? Math.sqrt(sum / total) : 0
-  } finally {
-    ctx.close()
-  }
-}
+function ConfigurarDispositivo({ onBack }) {
+  const [config,     setConfig]     = useState(getStoredDevice)
+  const [debeGrabar, setDebeGrabar] = useState(false)
 
-function ConfigurarDispositivo({ perfil, onBack }) {
-  const [config,      setConfig]      = useState(getStoredDevice)
-  const [debeGrabar,  setDebeGrabar]  = useState(false)
-  const [grabando,    setGrabando]    = useState(false)
-  const [procesando,  setProcesando]  = useState(false)
-  const [ultimoEnvio, setUltimoEnvio] = useState(null)
-  const [tick,        setTick]        = useState(0)
-  const [bloques,     setBloques]     = useState([])
-
-  const activeRef     = useRef(false)
-  const mrRef         = useRef(null)
-  const streamRef     = useRef(null)
-  const blockTimerRef = useRef(null)
-  const bloqueNumRef  = useRef(0)
-  const configRef     = useRef(config)
-  configRef.current   = config   // siempre apunta al config del render actual
+  const configRef   = useRef(config)
+  configRef.current = config
 
   // ── Carga inicial desde servidor ──────────────────────────────────────────
 
@@ -177,12 +148,12 @@ function ConfigurarDispositivo({ perfil, onBack }) {
         if (!res.ok) return
         const data = await res.json()
         const next = {
-          activo:           data.activo           ?? false,
-          apertura:         data.apertura         ?? '09:00',
-          cierre:           data.cierre           ?? '20:00',
-          descanso:         data.descanso         ?? false,
-          descansoInicio:   data.descanso_inicio  ?? '13:00',
-          descansoFin:      data.descanso_fin     ?? '14:00',
+          activo:           data.activo            ?? false,
+          apertura:         data.apertura          ?? '09:00',
+          cierre:           data.cierre            ?? '20:00',
+          descanso:         data.descanso          ?? false,
+          descansoInicio:   data.descanso_inicio   ?? '13:00',
+          descansoFin:      data.descanso_fin      ?? '14:00',
           saludoAutomatico: data.saludo_automatico ?? false,
         }
         localStorage.setItem(DEVICE_KEY, JSON.stringify(next))
@@ -191,6 +162,24 @@ function ConfigurarDispositivo({ perfil, onBack }) {
       } catch { /* usa fallback de localStorage */ }
     }
     cargarConfig()
+  }, [])
+
+  // Refresca el badge cada minuto sin tocar el micrófono
+  useEffect(() => {
+    const check = () => {
+      const cfg = configRef.current
+      if (!cfg.activo) { setDebeGrabar(false); return }
+      const now = new Date()
+      const cur = now.getHours() * 60 + now.getMinutes()
+      const hm  = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+      const dentro    = cur >= hm(cfg.apertura) && cur < hm(cfg.cierre)
+      const enDescanso = cfg.descanso &&
+        cur >= hm(cfg.descansoInicio) && cur < hm(cfg.descansoFin)
+      setDebeGrabar(dentro && !enDescanso)
+    }
+    check()
+    const id = setInterval(check, 60_000)
+    return () => clearInterval(id)
   }, [])
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -220,167 +209,24 @@ function ConfigurarDispositivo({ perfil, onBack }) {
     } catch { /* ignora errores de red */ }
   }
 
-  function esDentroHorario(cfg) {
-    const now = new Date()
-    const cur = now.getHours() * 60 + now.getMinutes()
-    const [ah, am] = cfg.apertura.split(':').map(Number)
-    const [ch, cm] = cfg.cierre.split(':').map(Number)
-    return cur >= ah * 60 + am && cur < ch * 60 + cm
-  }
-
-  function esEnDescanso(cfg) {
-    if (!cfg.descanso) return false
-    const now = new Date()
-    const cur = now.getHours() * 60 + now.getMinutes()
-    const [ih, im] = cfg.descansoInicio.split(':').map(Number)
-    const [fh, fm] = cfg.descansoFin.split(':').map(Number)
-    return cur >= ih * 60 + im && cur < fh * 60 + fm
-  }
-
-  // ── Grabación por bloques con filtro RMS ──────────────────────────────────
-
-  async function grabarBloque(stream) {
-    if (!activeRef.current) return
-
-    bloqueNumRef.current++
-    const num = bloqueNumRef.current
-
-    setGrabando(true)
-    setProcesando(false)
-
-    const mr = new MediaRecorder(stream)
-    mrRef.current = mr
-    const chunks = []
-    mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
-
-    await new Promise(resolve => {
-      mr.onstop = resolve
-      mr.start()
-      blockTimerRef.current = setTimeout(() => {
-        if (mr.state === 'recording') mr.stop()
-      }, MAX_BLOCK_MS)
-    })
-
-    clearTimeout(blockTimerRef.current)
-    if (!activeRef.current) { setGrabando(false); return }
-
-    setGrabando(false)
-    setProcesando(true)
-
-    const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' })
-
-    let rms = 0
-    try { rms = await computeBlobRMS(blob) } catch { rms = 0 }
-
-    if (rms >= RMS_THRESHOLD) {
-      const form = new FormData()
-      form.append('audio', blob, 'audio.webm')
-      if (perfil) form.append('perfil', JSON.stringify(perfil))
-      try {
-        await fetch(`${API}/audio`, { method: 'POST', body: form })
-        setUltimoEnvio(new Date())
-        setBloques(prev => [...prev.slice(-4), { id: num, estado: 'enviado' }])
-      } catch (e) {
-        console.error('Error enviando bloque:', e)
-        setBloques(prev => [...prev.slice(-4), { id: num, estado: 'error' }])
-      }
-    } else {
-      setBloques(prev => [...prev.slice(-4), { id: num, estado: 'descartado' }])
-    }
-
-    setProcesando(false)
-    grabarBloque(stream)
-  }
-
-  async function iniciarGrabacion() {
-    if (activeRef.current) return
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
-      activeRef.current = true
-      grabarBloque(stream)
-    } catch (e) {
-      console.error('No se pudo acceder al micrófono:', e)
-    }
-  }
-
-  function detenerGrabacion() {
-    activeRef.current = false
-    clearTimeout(blockTimerRef.current)
-    if (mrRef.current?.state === 'recording') mrRef.current.stop()
-    streamRef.current?.getTracks().forEach(t => t.stop())
-    streamRef.current = null
-    setGrabando(false)
-    setProcesando(false)
-  }
-
-  // ── Lógica de horario ─────────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (!config.activo) {
-      detenerGrabacion()
-      setDebeGrabar(false)
-      return
-    }
-
-    const check = () => {
-      const dentro    = esDentroHorario(config)
-      const descanso  = esEnDescanso(config)
-      const shouldGrab = dentro && !descanso
-
-      setDebeGrabar(shouldGrab)
-
-      if (shouldGrab && !activeRef.current) iniciarGrabacion()
-      else if (!shouldGrab && activeRef.current) detenerGrabacion()
-    }
-
-    check()
-    const id = setInterval(check, 60_000)
-    return () => clearInterval(id)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.activo, config.apertura, config.cierre,
-      config.descanso, config.descansoInicio, config.descansoFin])
-
-  // Cleanup al salir de la pantalla
-  useEffect(() => {
-    return () => {
-      activeRef.current = false
-      clearTimeout(blockTimerRef.current)
-      if (mrRef.current?.state === 'recording') mrRef.current.stop()
-      streamRef.current?.getTracks().forEach(t => t.stop())
-    }
-  }, [])
-
-  // Re-render cada 30s para "hace X min"
-  useEffect(() => {
-    if (!ultimoEnvio) return
-    const id = setInterval(() => setTick(t => t + 1), 30_000)
-    return () => clearInterval(id)
-  }, [ultimoEnvio])
-
-  // ── Estado actual ─────────────────────────────────────────────────────────
-
   function getEstado() {
-    if (!config.activo)       return { label: 'Inactivo',        cls: 'inactivo' }
-    if (debeGrabar)           return { label: 'Escuchando',      cls: 'escuchando' }
-    if (esEnDescanso(config)) return { label: 'En descanso',     cls: 'descanso' }
-    return                           { label: 'Fuera de horario', cls: 'fuera' }
+    if (!config.activo) return { label: 'Inactivo',        cls: 'inactivo' }
+    if (debeGrabar)     return { label: 'Escuchando',      cls: 'escuchando' }
+    const cfg = configRef.current
+    const now = new Date()
+    const cur = now.getHours() * 60 + now.getMinutes()
+    const hm  = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+    if (cfg.descanso && cur >= hm(cfg.descansoInicio) && cur < hm(cfg.descansoFin))
+      return { label: 'En descanso', cls: 'descanso' }
+    return { label: 'Fuera de horario', cls: 'fuera' }
   }
 
-  function formatDesdeEnvio(fecha) {
-    if (!fecha) return null
-    const min = Math.floor((Date.now() - fecha) / 60_000)
-    return min === 0 ? 'hace menos de 1 min' : `hace ${min} min`
-  }
-
-  const estado     = getEstado()
-  const desdeEnvio = formatDesdeEnvio(ultimoEnvio)
-  void tick
+  const estado = getEstado()
 
   return (
     <div className="cd-screen">
       <header className="cd-header">
-        <button className="cd-back" onClick={() => { detenerGrabacion(); onBack() }}>
+        <button className="cd-back" onClick={onBack}>
           ← Volver
         </button>
         <span className="cd-title">Configurar dispositivo</span>
@@ -393,26 +239,7 @@ function ConfigurarDispositivo({ perfil, onBack }) {
         <div className={`cd-estado ${estado.cls}`}>
           <span className="cd-estado-dot" />
           <span className="cd-estado-label">{estado.label}</span>
-          {desdeEnvio && (
-            <span className="cd-estado-envio">Último envío {desdeEnvio}</span>
-          )}
         </div>
-
-        {/* Log de bloques */}
-        {bloques.length > 0 && (
-          <div className="cd-log">
-            {[...bloques].reverse().map(b => (
-              <div key={b.id} className={`cd-log-item cd-log-${b.estado}`}>
-                <span className="cd-log-dot" />
-                Bloque {b.id} — {
-                  b.estado === 'enviado'    ? 'enviado' :
-                  b.estado === 'error'      ? 'error al enviar' :
-                                             'descartado (silencio)'
-                }
-              </div>
-            ))}
-          </div>
-        )}
 
         {/* Toggle asistente activo */}
         <div className="cd-card">
@@ -651,7 +478,7 @@ export default function App() {
   // ── Configurar Dispositivo screen ───────────────────────────────────────────
 
   if (view === 'dispositivo') {
-    return <ConfigurarDispositivo perfil={perfil} onBack={() => setView('main')} />
+    return <ConfigurarDispositivo onBack={() => setView('main')} />
   }
 
   // ── Main screen ─────────────────────────────────────────────────────────────
