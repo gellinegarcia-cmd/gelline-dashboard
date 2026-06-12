@@ -259,6 +259,10 @@ body {
 .cd-toggle.on          { background: var(--verde); }
 .cd-toggle.on::after   { left: 23px; }
 
+.cd-row-inline {
+  padding: 12px 18px;
+}
+
 .cd-time-row {
   display: flex;
   align-items: center;

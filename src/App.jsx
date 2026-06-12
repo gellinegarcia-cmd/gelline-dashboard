@@ -15,7 +15,7 @@ const DEFAULT_DEVICE = {
   cierre:           '20:00',
   descanso:         false,
   descansoInicio:   '13:00',
-  descansoFin:      '14:00',
+  descansoFin:      '15:00',
   saludoAutomatico: false,
 }
 
@@ -170,7 +170,7 @@ function ConfigurarDispositivo({ onBack }) {
           cierre:           data.cierre            ?? '20:00',
           descanso:         data.descanso          ?? false,
           descansoInicio:   data.descanso_inicio   ?? '13:00',
-          descansoFin:      data.descanso_fin      ?? '14:00',
+          descansoFin:      data.descanso_fin      ?? '15:00',
           saludoAutomatico: data.saludo_automatico ?? false,
         }
         localStorage.setItem(DEVICE_KEY, JSON.stringify(next))
@@ -271,6 +271,39 @@ function ConfigurarDispositivo({ onBack }) {
               onChange={e => saveConfig({ cierre: e.target.value })}
             />
           </div>
+          <div className="cd-sep" />
+          <div className="cd-row cd-row-inline">
+            <span className="cd-time-label">Pausa al mediodía</span>
+            <button
+              className={`cd-toggle ${config.descanso ? 'on' : ''}`}
+              onClick={() => saveConfig({ descanso: !configRef.current.descanso })}
+              aria-label="Activar pausa al mediodía"
+            />
+          </div>
+          {config.descanso && (
+            <>
+              <div className="cd-sep" />
+              <div className="cd-time-row">
+                <label className="cd-time-label">Inicio</label>
+                <input
+                  className="cd-time-input"
+                  type="time"
+                  value={config.descansoInicio}
+                  onChange={e => saveConfig({ descansoInicio: e.target.value })}
+                />
+              </div>
+              <div className="cd-sep" />
+              <div className="cd-time-row">
+                <label className="cd-time-label">Fin</label>
+                <input
+                  className="cd-time-input"
+                  type="time"
+                  value={config.descansoFin}
+                  onChange={e => saveConfig({ descansoFin: e.target.value })}
+                />
+              </div>
+            </>
+          )}
         </div>
 
       </div>
