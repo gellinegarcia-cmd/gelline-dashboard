@@ -51,14 +51,11 @@ const CATEGORY_CONFIG = {
 }
 
 const HASH_SECTION_MAP = {
-  'rojo — actuá hoy':       'rojo',
-  'rojo - actuá hoy':       'rojo',
-  'amarillo — esta semana': 'amarillo',
-  'amarillo - esta semana': 'amarillo',
-  'verde — para pensar':    'verde',
-  'verde - para pensar':    'verde',
-  'lo que funcionó':        'lo-que-funciono',
-  'lo que funciono':        'lo-que-funciono',
+  'plata que se te escapa hoy':    'rojo',
+  'esto se viene repitiendo':      'amarillo',
+  'para que no te vuelva a pasar': 'verde',
+  'lo que funcionó':               'lo-que-funciono',
+  'lo que funciono':               'lo-que-funciono',
 }
 
 function parseDecisiones(md) {
@@ -71,8 +68,7 @@ function parseDecisiones(md) {
       if (current) decisions.push(current)
       const rawTitle = line.replace(/^###\s*/, '').trim()
       const category = HASH_SECTION_MAP[rawTitle.toLowerCase()] || 'general'
-      const displayTitle = CATEGORY_CONFIG[category]?.label || rawTitle
-      current = { title: displayTitle, bodyLines: [], category }
+      current = { title: rawTitle, bodyLines: [], category }
     } else if (current) {
       current.bodyLines.push(line)
     }
