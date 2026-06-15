@@ -43,27 +43,22 @@ function simpleHash(str) {
 }
 
 const CATEGORY_CONFIG = {
-  urgente:           { label: 'Urgente',        bg: '#FEE2E2', color: '#991B1B' },
-  importante:        { label: 'Importante',      bg: '#FEF3C7', color: '#92400E' },
-  reflexión:         { label: 'Reflexión',       bg: '#DBEAFE', color: '#1E40AF' },
-  'lo-que-funciono': { label: 'Lo que funcionó', bg: '#D1FAE5', color: '#065F46' },
+  rojo:              { label: 'Actuá hoy',      bg: '#FEE2E2', color: '#991B1B' },
+  amarillo:          { label: 'Esta semana',     bg: '#FEF9C3', color: '#854D0E' },
+  verde:             { label: 'Para pensar',     bg: '#DCFCE7', color: '#166534' },
+  'lo-que-funciono': { label: 'Lo que funcionó', bg: '#F0FDF4', color: '#15803D' },
   general:           { label: 'General',         bg: '#F3F4F6', color: '#374151' },
 }
 
-const BOLD_SECTION_MAP = {
-  'urgente':         'urgente',
-  'importante':      'importante',
-  'reflexion':       'reflexión',
-  'reflexión':       'reflexión',
-  'lo que funciono': 'lo-que-funciono',
-  'lo que funcionó': 'lo-que-funciono',
-}
-
-function parseBoldSection(line) {
-  const m = line.match(/^\*\*(.+?)\*\*\s*$/)
-  if (!m) return null
-  const title = m[1].trim()
-  return BOLD_SECTION_MAP[title.toLowerCase()] || null
+const HASH_SECTION_MAP = {
+  'rojo — actuá hoy':       'rojo',
+  'rojo - actuá hoy':       'rojo',
+  'amarillo — esta semana': 'amarillo',
+  'amarillo - esta semana': 'amarillo',
+  'verde — para pensar':    'verde',
+  'verde - para pensar':    'verde',
+  'lo que funcionó':        'lo-que-funciono',
+  'lo que funciono':        'lo-que-funciono',
 }
 
 function parseDecisiones(md) {
@@ -72,13 +67,12 @@ function parseDecisiones(md) {
   const decisions = []
   let current = null
   for (const line of lines) {
-    const boldCat = parseBoldSection(line)
-    if (boldCat) {
+    if (line.startsWith('### ')) {
       if (current) decisions.push(current)
-      current = { title: line.replace(/\*\*/g, '').trim(), bodyLines: [], category: boldCat }
-    } else if (line.startsWith('### ')) {
-      if (current) decisions.push(current)
-      current = { title: line.replace(/^###\s*\d+\.\s*/, '').trim(), bodyLines: [], category: 'general' }
+      const rawTitle = line.replace(/^###\s*/, '').trim()
+      const category = HASH_SECTION_MAP[rawTitle.toLowerCase()] || 'general'
+      const displayTitle = CATEGORY_CONFIG[category]?.label || rawTitle
+      current = { title: displayTitle, bodyLines: [], category }
     } else if (current) {
       current.bodyLines.push(line)
     }
@@ -86,7 +80,7 @@ function parseDecisiones(md) {
   if (current) decisions.push(current)
   if (decisions.length === 0) return md
   return decisions.map((d, i) => ({
-    id:       simpleHash(d.title) || String(i),
+    id:       simpleHash(d.category + (d.bodyLines[0] || String(i))),
     title:    d.title,
     body:     d.bodyLines.join('\n').trim(),
     category: d.category,
