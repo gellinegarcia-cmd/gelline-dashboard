@@ -43,22 +43,27 @@ function simpleHash(str) {
 }
 
 const CATEGORY_CONFIG = {
-  venta:        { label: 'Venta',        bg: '#FEF3C7', color: '#92400E' },
-  stock:        { label: 'Stock',        bg: '#D1FAE5', color: '#065F46' },
-  atención:     { label: 'Atención',     bg: '#DBEAFE', color: '#1E40AF' },
-  horario:      { label: 'Horario',      bg: '#EDE9FE', color: '#5B21B6' },
-  comunicación: { label: 'Comunicación', bg: '#FCE7F3', color: '#9D174D' },
-  general:      { label: 'General',      bg: '#F3F4F6', color: '#374151' },
+  urgente:           { label: 'Urgente',        bg: '#FEE2E2', color: '#991B1B' },
+  importante:        { label: 'Importante',      bg: '#FEF3C7', color: '#92400E' },
+  reflexión:         { label: 'Reflexión',       bg: '#DBEAFE', color: '#1E40AF' },
+  'lo-que-funciono': { label: 'Lo que funcionó', bg: '#D1FAE5', color: '#065F46' },
+  general:           { label: 'General',         bg: '#F3F4F6', color: '#374151' },
 }
 
-function detectCategory(text) {
-  const t = (text || '').toLowerCase()
-  if (t.match(/stock|producto|inventar|ingrediente|traer|pedir|reponer/))    return 'stock'
-  if (t.match(/venta|ticket|precio|cobr|oferta|promo|vender/))               return 'venta'
-  if (t.match(/atenci|emplead|personal|mozo|mesero|servicio|capacitar/))     return 'atención'
-  if (t.match(/horario|apertur|cierr|descanso|siest|mediod/))                return 'horario'
-  if (t.match(/comunicaci|whatsapp|redes|instagram|publicar|difundir|menu/)) return 'comunicación'
-  return 'general'
+const BOLD_SECTION_MAP = {
+  'urgente':         'urgente',
+  'importante':      'importante',
+  'reflexion':       'reflexión',
+  'reflexión':       'reflexión',
+  'lo que funciono': 'lo-que-funciono',
+  'lo que funcionó': 'lo-que-funciono',
+}
+
+function parseBoldSection(line) {
+  const m = line.match(/^\*\*(.+?)\*\*\s*$/)
+  if (!m) return null
+  const title = m[1].trim()
+  return BOLD_SECTION_MAP[title.toLowerCase()] || null
 }
 
 function parseDecisiones(md) {
@@ -67,9 +72,13 @@ function parseDecisiones(md) {
   const decisions = []
   let current = null
   for (const line of lines) {
-    if (line.startsWith('### ')) {
+    const boldCat = parseBoldSection(line)
+    if (boldCat) {
       if (current) decisions.push(current)
-      current = { title: line.replace(/^###\s*\d+\.\s*/, '').trim(), bodyLines: [] }
+      current = { title: line.replace(/\*\*/g, '').trim(), bodyLines: [], category: boldCat }
+    } else if (line.startsWith('### ')) {
+      if (current) decisions.push(current)
+      current = { title: line.replace(/^###\s*\d+\.\s*/, '').trim(), bodyLines: [], category: 'general' }
     } else if (current) {
       current.bodyLines.push(line)
     }
@@ -80,7 +89,7 @@ function parseDecisiones(md) {
     id:       simpleHash(d.title) || String(i),
     title:    d.title,
     body:     d.bodyLines.join('\n').trim(),
-    category: detectCategory(d.title + ' ' + d.bodyLines.join(' ')),
+    category: d.category,
   }))
 }
 
