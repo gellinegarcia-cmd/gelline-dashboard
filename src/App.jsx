@@ -67,7 +67,9 @@ function parseDecisiones(md) {
     if (line.startsWith('### ')) {
       if (current) decisions.push(current)
       const rawTitle = line.replace(/^###\s*/, '').trim()
-      const category = HASH_SECTION_MAP[rawTitle.toLowerCase()] || 'general'
+      const key = rawTitle.toLowerCase()
+      const category = HASH_SECTION_MAP[key] || 'general'
+      console.log('[' + rawTitle + ']', '→ key:', '[' + key + ']', '→ match:', HASH_SECTION_MAP[key] || 'NO MATCH (general)')
       current = { title: rawTitle, bodyLines: [], category }
     } else if (current) {
       current.bodyLines.push(line)
