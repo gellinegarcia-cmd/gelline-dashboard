@@ -265,6 +265,7 @@ function ConfigurarDispositivo({ onBack }) {
             <input
               className="cd-time-input"
               type="time"
+              step="60"
               value={config.apertura}
               onChange={e => saveConfig({ apertura: e.target.value })}
             />
@@ -275,6 +276,7 @@ function ConfigurarDispositivo({ onBack }) {
             <input
               className="cd-time-input"
               type="time"
+              step="60"
               value={config.cierre}
               onChange={e => saveConfig({ cierre: e.target.value })}
             />
@@ -296,6 +298,7 @@ function ConfigurarDispositivo({ onBack }) {
                 <input
                   className="cd-time-input"
                   type="time"
+                  step="60"
                   value={config.descansoInicio}
                   onChange={e => saveConfig({ descansoInicio: e.target.value })}
                 />
@@ -306,6 +309,7 @@ function ConfigurarDispositivo({ onBack }) {
                 <input
                   className="cd-time-input"
                   type="time"
+                  step="60"
                   value={config.descansoFin}
                   onChange={e => saveConfig({ descansoFin: e.target.value })}
                 />

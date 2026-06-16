@@ -282,6 +282,9 @@ body {
   background: #fff;
   outline: none;
   transition: border-color 0.2s;
+  width: 120px;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .cd-time-input:focus { border-color: var(--verde); }
