@@ -5,7 +5,9 @@ import './App.css'
 const API         = 'https://kiosco-ai.onrender.com'
 const STORAGE_KEY = 'kiosco_perfil'
 const DEVICE_KEY  = 'kiosco_dispositivo'
-const RATINGS_KEY = 'kiosco_ratings'
+const RATINGS_KEY      = 'kiosco_ratings'
+const SEMANA_CACHE_KEY = 'gelline_semana_cache'
+const CACHE_TTL_MS     = 4 * 60 * 60 * 1000
 
 const TIPOS = ['kiosco', 'carnicería', 'verdulería', 'ropa', 'almacén', 'panadería', 'otro']
 
@@ -100,6 +102,57 @@ function formatDateLong() {
   return new Date().toLocaleDateString('es-AR', {
     weekday: 'long', day: 'numeric', month: 'long',
   })
+}
+
+function getDayContext() {
+  const day = new Date().getDay()
+  if (day >= 1 && day <= 4) return {
+    mode:         'parcial',
+    buttonText:   '¿Cómo va la semana?',
+    sectionTitle: 'Cómo va la semana',
+    emptyIcon:    '📅',
+    emptyText:    'Todavía es temprano en la semana. Volvé el viernes para ver el resumen completo.',
+    queryParam:   '&tipo=parcial',
+  }
+  if (day === 0) return {
+    mode:         'completo',
+    buttonText:   'Ver resumen completo ✦',
+    sectionTitle: 'Resumen completo de la semana',
+    emptyIcon:    '📊',
+    emptyText:    'Tocá el botón para ver cómo fue la semana.',
+    queryParam:   '',
+  }
+  return {
+    mode:         'avanzado',
+    buttonText:   'Ver cómo va la semana',
+    sectionTitle: 'Resumen de la semana',
+    emptyIcon:    '📊',
+    emptyText:    'Tocá el botón para ver cómo fue la semana.',
+    queryParam:   '',
+  }
+}
+
+function getSemanaCache() {
+  try {
+    const raw = localStorage.getItem(SEMANA_CACHE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch { return null }
+}
+
+function saveSemanaCache(data) {
+  try {
+    localStorage.setItem(SEMANA_CACHE_KEY, JSON.stringify({ data, timestamp: Date.now() }))
+  } catch { }
+}
+
+function formatCacheAge(ts) {
+  const diffMs = Date.now() - ts
+  const diffH  = Math.floor(diffMs / (1000 * 60 * 60))
+  const diffM  = Math.floor(diffMs / (1000 * 60))
+  if (diffH >= 1) return `Actualizado hace ${diffH} hora${diffH > 1 ? 's' : ''}`
+  if (diffM >= 1) return `Actualizado hace ${diffM} minuto${diffM > 1 ? 's' : ''}`
+  return 'Actualizado hace un momento'
 }
 
 // ── Profile Form (nombre + tipo únicamente) ───────────────────────────────────
@@ -370,7 +423,14 @@ export default function App() {
   const [view,          setView]          = useState('main')
   const [showEdit,      setShowEdit]      = useState(false)
   const [decisiones,    setDecisiones]    = useState(null)
-  const [semanaData,    setSemanaData]    = useState(null)
+  const [semanaData,      setSemanaData]      = useState(() => {
+    const c = getSemanaCache()
+    return c && Date.now() - c.timestamp < CACHE_TTL_MS ? c.data : null
+  })
+  const [semanaTimestamp, setSemanaTimestamp] = useState(() => {
+    const c = getSemanaCache()
+    return c && Date.now() - c.timestamp < CACHE_TTL_MS ? c.timestamp : null
+  })
   const [loading,       setLoading]       = useState(false)
   const [loadingSemana, setLoadingSemana] = useState(false)
   const [analyzing,     setAnalyzing]     = useState(false)
@@ -426,13 +486,26 @@ export default function App() {
     }
   }, [])
 
-  const fetchSemana = useCallback(async () => {
+  const fetchSemana = useCallback(async (force = false) => {
+    if (!force) {
+      const c = getSemanaCache()
+      if (c && Date.now() - c.timestamp < CACHE_TTL_MS) {
+        setSemanaData(c.data)
+        setSemanaTimestamp(c.timestamp)
+        return
+      }
+    }
     setLoadingSemana(true)
     try {
+      const ctx = getDayContext()
+      await fetch(`${API}/analizar?periodo=semana${ctx.queryParam}`)
+      await new Promise(r => setTimeout(r, 5_000))
       const res = await fetch(`${API}/decisiones?periodo=semana`)
       if (res.ok) {
         const data = await res.json()
         setSemanaData(data.decisiones)
+        setSemanaTimestamp(Date.now())
+        saveSemanaCache(data.decisiones)
       }
     } catch { }
     finally { setLoadingSemana(false) }
@@ -530,6 +603,7 @@ export default function App() {
   const currentLoading = tab === 'hoy' ? (loading || analyzing) : loadingSemana
   const parsed         = parseDecisiones(currentData)
   const isArray        = Array.isArray(parsed)
+  const dayCtx         = getDayContext()
 
   // ── Main screen ────────────────────────────────────────────────────────────
 
@@ -575,7 +649,7 @@ export default function App() {
         </button>
         <button
           className="tab-refresh"
-          onClick={tab === 'hoy' ? fetchDecisiones : fetchSemana}
+          onClick={tab === 'hoy' ? fetchDecisiones : () => fetchSemana(true)}
           disabled={currentLoading}
           aria-label="Actualizar"
         >
@@ -585,8 +659,11 @@ export default function App() {
 
       <div className="content-area">
         <h2 className="section-title">
-          {tab === 'hoy' ? 'Lo que encontré hoy' : 'Resumen de la semana'}
+          {tab === 'hoy' ? 'Lo que encontré hoy' : dayCtx.sectionTitle}
         </h2>
+        {tab === 'semana' && semanaTimestamp && (
+          <p className="semana-cache-age">{formatCacheAge(semanaTimestamp)}</p>
+        )}
 
         {currentLoading ? (
           <div className="loading-state">
@@ -596,14 +673,32 @@ export default function App() {
         ) : error ? (
           <div className="error-msg">{error}</div>
         ) : !currentData ? (
-          <div className="empty-state">
-            <div className="empty-icon">💡</div>
-            <p className="empty-title">Todavía no encontré nada hoy</p>
-            <p className="empty-sub">Cuando haya conversaciones, acá vas a ver mis sugerencias</p>
-            <button className="analizar-btn" onClick={triggerAnalisis} disabled={analyzing}>
-              Ver resumen de hoy
-            </button>
-          </div>
+          tab === 'hoy' ? (
+            <div className="empty-state">
+              <div className="empty-icon">💡</div>
+              <p className="empty-title">Todavía no encontré nada hoy</p>
+              <p className="empty-sub">Cuando haya conversaciones, acá vas a ver mis sugerencias</p>
+              <button className="analizar-btn" onClick={triggerAnalisis} disabled={analyzing}>
+                Ver resumen de hoy
+              </button>
+            </div>
+          ) : (
+            <div className="empty-state">
+              <div className="empty-icon">{dayCtx.emptyIcon}</div>
+              <p className="empty-title">{dayCtx.emptyText}</p>
+              <button
+                className="analizar-btn"
+                style={dayCtx.mode === 'completo' ? {
+                  border:    '2px solid #F59E0B',
+                  boxShadow: '0 0 8px rgba(245,158,11,0.3)',
+                } : undefined}
+                onClick={() => fetchSemana(true)}
+                disabled={loadingSemana}
+              >
+                {dayCtx.buttonText}
+              </button>
+            </div>
+          )
         ) : isArray ? (
           <div className="decisions-list">
             {parsed.map(dec => (
