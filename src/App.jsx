@@ -42,6 +42,19 @@ function simpleHash(str) {
   return h.toString(36)
 }
 
+function getGellineStatus(cfg, debeGrabar) {
+  if (!cfg.activo) return { text: 'Gelline está en pausa', dot: '#9CA3AF', pulse: false }
+  const now = new Date()
+  const cur = now.getHours() * 60 + now.getMinutes()
+  const hm  = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+  const enDescanso = cfg.descanso && cur >= hm(cfg.descansoInicio) && cur < hm(cfg.descansoFin)
+  const dentro     = cur >= hm(cfg.apertura) && cur < hm(cfg.cierre)
+  if (enDescanso) return { text: 'En pausa',        dot: '#EAB308', pulse: false }
+  if (!dentro)    return { text: 'Fuera de horario', dot: '#9CA3AF', pulse: false }
+  if (debeGrabar) return { text: 'Con vos',          dot: '#22C55E', pulse: true  }
+  return                 { text: 'Acompañando',      dot: '#86EFAC', pulse: false }
+}
+
 const CATEGORY_CONFIG = {
   rojo:              { label: 'Actuá hoy',      bg: '#FEE2E2', color: '#991B1B' },
   amarillo:          { label: 'Esta semana',     bg: '#FEF9C3', color: '#854D0E' },
@@ -234,12 +247,8 @@ function ConfigurarDispositivo({ onBack }) {
         <div className="cd-card">
           <div className="cd-row">
             <div className="cd-row-info">
-              <span className="cd-row-label">Gelline está escuchando</span>
-              <span className="cd-row-sub">
-                {debeGrabar
-                  ? 'Activo y dentro del horario'
-                  : config.activo ? 'Activo, fuera del horario' : 'Inactivo'}
-              </span>
+              <span className="cd-row-label">Gelline</span>
+              <span className="cd-row-sub">{getGellineStatus(config, debeGrabar).text}</span>
             </div>
             <button
               className={`cd-toggle ${config.activo ? 'on' : ''}`}
@@ -359,8 +368,9 @@ export default function App() {
   const [error,         setError]         = useState(null)
   const [textInput,     setTextInput]     = useState('')
   const [tab,           setTab]           = useState('hoy')
-  const [gellineActivo, setGellineActivo] = useState(() => getStoredDevice().activo)
-  const [ratings,       setRatings]       = useState(getStoredRatings)
+  const [gellineActivo,     setGellineActivo]     = useState(() => getStoredDevice().activo)
+  const [gellineDebeGrabar, setGellineDebeGrabar] = useState(false)
+  const [ratings,           setRatings]           = useState(getStoredRatings)
 
   function savePerfil(p) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(p))
@@ -369,7 +379,18 @@ export default function App() {
   }
 
   function handleBackFromConfig() {
-    setGellineActivo(getStoredDevice().activo)
+    const cfg = getStoredDevice()
+    setGellineActivo(cfg.activo)
+    if (cfg.activo) {
+      const now = new Date()
+      const cur = now.getHours() * 60 + now.getMinutes()
+      const hm  = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+      const dentro     = cur >= hm(cfg.apertura) && cur < hm(cfg.cierre)
+      const enDescanso = cfg.descanso && cur >= hm(cfg.descansoInicio) && cur < hm(cfg.descansoFin)
+      setGellineDebeGrabar(dentro && !enDescanso)
+    } else {
+      setGellineDebeGrabar(false)
+    }
     setView('main')
   }
 
@@ -428,6 +449,23 @@ export default function App() {
   useEffect(() => {
     if (tab === 'semana' && !semanaData && !loadingSemana) fetchSemana()
   }, [tab, semanaData, loadingSemana, fetchSemana])
+
+  useEffect(() => {
+    function checkStatus() {
+      const cfg = getStoredDevice()
+      setGellineActivo(cfg.activo)
+      if (!cfg.activo) { setGellineDebeGrabar(false); return }
+      const now = new Date()
+      const cur = now.getHours() * 60 + now.getMinutes()
+      const hm  = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+      const dentro     = cur >= hm(cfg.apertura) && cur < hm(cfg.cierre)
+      const enDescanso = cfg.descanso && cur >= hm(cfg.descansoInicio) && cur < hm(cfg.descansoFin)
+      setGellineDebeGrabar(dentro && !enDescanso)
+    }
+    checkStatus()
+    const id = setInterval(checkStatus, 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   const sendText = async () => {
     const texto = textInput.trim()
@@ -502,14 +540,15 @@ export default function App() {
         </div>
       </header>
 
-      <div className={`status-badge ${gellineActivo ? 'activo' : 'inactivo'}`}>
-        <span className={`status-dot ${gellineActivo ? 'pulse' : ''}`} />
-        <span className="status-text">
-          {gellineActivo
-            ? 'Gelline está escuchando tu local'
-            : 'Gelline está en pausa'}
-        </span>
-      </div>
+      {(() => {
+        const s = getGellineStatus(getStoredDevice(), gellineDebeGrabar)
+        return (
+          <div className="status-badge">
+            <span className={`status-dot ${s.pulse ? 'pulse' : ''}`} style={{ background: s.dot }} />
+            <span className="status-text">{s.text}</span>
+          </div>
+        )
+      })()}
 
       <div className="tabs">
         <button
