@@ -272,22 +272,39 @@ body {
 
 .cd-time-label { font-size: 14px; color: var(--text); }
 
-.cd-time-input {
+.cd-time-select {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.cd-select {
   border: 1px solid var(--card-border);
   border-radius: 8px;
-  padding: 7px 10px;
-  font-size: 14px;
+  padding: 8px 4px;
+  font-size: 16px;
   font-family: 'Inter', sans-serif;
   color: var(--text);
   background: #fff;
   outline: none;
-  transition: border-color 0.2s;
-  width: 120px;
+  -webkit-appearance: none;
+  appearance: none;
+  text-align: center;
+  cursor: pointer;
+  width: 54px;
   box-sizing: border-box;
-  flex-shrink: 0;
+  transition: border-color 0.2s;
 }
 
-.cd-time-input:focus { border-color: var(--verde); }
+.cd-select:focus { border-color: var(--verde); }
+
+.cd-time-colon {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  user-select: none;
+}
 
 .cd-sep {
   height: 0.5px;

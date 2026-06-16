@@ -161,6 +161,36 @@ function ProfileForm({ initial = {}, onSave, onCancel }) {
   )
 }
 
+// ── TimeSelect ────────────────────────────────────────────────────────────────
+
+const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
+const MINUTES = ['00', '30']
+
+function TimeSelect({ value, onChange }) {
+  const parts = (value || '00:00').split(':')
+  const h = parts[0] || '00'
+  const m = MINUTES.includes(parts[1]) ? parts[1] : '00'
+  return (
+    <div className="cd-time-select">
+      <select
+        className="cd-select"
+        value={h}
+        onChange={e => onChange(`${e.target.value}:${m}`)}
+      >
+        {HOURS.map(hr => <option key={hr}>{hr}</option>)}
+      </select>
+      <span className="cd-time-colon">:</span>
+      <select
+        className="cd-select"
+        value={m}
+        onChange={e => onChange(`${h}:${e.target.value}`)}
+      >
+        {MINUTES.map(mn => <option key={mn}>{mn}</option>)}
+      </select>
+    </div>
+  )
+}
+
 // ── Configurar Dispositivo (toggle + horario únicamente) ──────────────────────
 
 function ConfigurarDispositivo({ onBack }) {
@@ -262,24 +292,12 @@ function ConfigurarDispositivo({ onBack }) {
           <p className="cd-card-title">Horario de atención</p>
           <div className="cd-time-row">
             <label className="cd-time-label">Apertura</label>
-            <input
-              className="cd-time-input"
-              type="time"
-              step="60"
-              value={config.apertura}
-              onChange={e => saveConfig({ apertura: e.target.value })}
-            />
+            <TimeSelect value={config.apertura} onChange={v => saveConfig({ apertura: v })} />
           </div>
           <div className="cd-sep" />
           <div className="cd-time-row">
             <label className="cd-time-label">Cierre</label>
-            <input
-              className="cd-time-input"
-              type="time"
-              step="60"
-              value={config.cierre}
-              onChange={e => saveConfig({ cierre: e.target.value })}
-            />
+            <TimeSelect value={config.cierre} onChange={v => saveConfig({ cierre: v })} />
           </div>
           <div className="cd-sep" />
           <div className="cd-row cd-row-inline">
@@ -295,24 +313,12 @@ function ConfigurarDispositivo({ onBack }) {
               <div className="cd-sep" />
               <div className="cd-time-row">
                 <label className="cd-time-label">Inicio</label>
-                <input
-                  className="cd-time-input"
-                  type="time"
-                  step="60"
-                  value={config.descansoInicio}
-                  onChange={e => saveConfig({ descansoInicio: e.target.value })}
-                />
+                <TimeSelect value={config.descansoInicio} onChange={v => saveConfig({ descansoInicio: v })} />
               </div>
               <div className="cd-sep" />
               <div className="cd-time-row">
                 <label className="cd-time-label">Fin</label>
-                <input
-                  className="cd-time-input"
-                  type="time"
-                  step="60"
-                  value={config.descansoFin}
-                  onChange={e => saveConfig({ descansoFin: e.target.value })}
-                />
+                <TimeSelect value={config.descansoFin} onChange={v => saveConfig({ descansoFin: v })} />
               </div>
             </>
           )}
