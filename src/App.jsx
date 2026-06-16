@@ -591,14 +591,14 @@ export default function App() {
         {currentLoading ? (
           <div className="loading-state">
             <div className="spinner" />
-            <p>Estoy analizando lo que escuché...</p>
+            <p>Estoy analizando lo que encontré...</p>
           </div>
         ) : error ? (
           <div className="error-msg">{error}</div>
         ) : !currentData ? (
           <div className="empty-state">
-            <div className="empty-icon">👂</div>
-            <p className="empty-title">Todavía no escuché nada hoy</p>
+            <div className="empty-icon">💡</div>
+            <p className="empty-title">Todavía no encontré nada hoy</p>
             <p className="empty-sub">Cuando haya conversaciones, acá vas a ver mis sugerencias</p>
             <button className="analizar-btn" onClick={triggerAnalisis} disabled={analyzing}>
               Ver resumen de hoy
