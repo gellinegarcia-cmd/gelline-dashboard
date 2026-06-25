@@ -474,8 +474,11 @@ function ConfigurarDispositivo({ onBack }) {
           if (hRes.ok) {
             const hData = await hRes.json()
             if (hData.horarios) {
-              localStorage.setItem(HORARIOS_KEY, JSON.stringify(hData.horarios))
-              setHorarios(hData.horarios)
+              const horariosOrdenados = DIAS_SEMANA.map(dia =>
+                hData.horarios.find(h => h.dia === dia) || DEFAULT_HORARIOS.find(d => d.dia === dia)
+              )
+              localStorage.setItem(HORARIOS_KEY, JSON.stringify(horariosOrdenados))
+              setHorarios(horariosOrdenados)
             }
           }
         } catch { }
