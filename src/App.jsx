@@ -238,31 +238,40 @@ function ProfileForm({ initial = {}, onSave, onCancel }) {
 
 // ── TimeSelect ────────────────────────────────────────────────────────────────
 
-const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
-const MINUTES = ['00', '30']
-
 function TimeSelect({ value, onChange }) {
-  const parts = (value || '00:00').split(':')
-  const h = parts[0] || '00'
-  const m = MINUTES.includes(parts[1]) ? parts[1] : '00'
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value || '09:00')
+
+  useEffect(() => {
+    if (!editing) setDraft(value || '09:00')
+  }, [value, editing])
+
+  function handleBlur() {
+    setEditing(false)
+    const match = draft.match(/^([01]?\d|2[0-3]):([0-5]\d)$/)
+    if (match) {
+      const h = match[1].padStart(2, '0')
+      const m = match[2]
+      onChange(`${h}:${m}`)
+    } else {
+      setDraft(value || '09:00')
+    }
+  }
+
   return (
-    <div className="cd-time-select">
-      <select
-        className="cd-select"
-        value={h}
-        onChange={e => onChange(`${e.target.value}:${m}`)}
-      >
-        {HOURS.map(hr => <option key={hr}>{hr}</option>)}
-      </select>
-      <span className="cd-time-colon">:</span>
-      <select
-        className="cd-select"
-        value={m}
-        onChange={e => onChange(`${h}:${e.target.value}`)}
-      >
-        {MINUTES.map(mn => <option key={mn}>{mn}</option>)}
-      </select>
-    </div>
+    <input
+      inputMode="numeric"
+      value={draft}
+      onFocus={() => setEditing(true)}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={handleBlur}
+      style={{
+        width: 64, textAlign: 'center', fontSize: 15, fontWeight: 500,
+        padding: '6px 8px', border: '0.5px solid #D1D5DB', borderRadius: 8,
+        background: '#F9F7F2', color: '#1F2937', outline: 'none',
+      }}
+      placeholder="09:00"
+    />
   )
 }
 
@@ -271,19 +280,13 @@ function TimeSelect({ value, onChange }) {
 function HorariosPorDia({ horarios, onChange }) {
   const [expandido, setExpandido] = useState(false)
   const [editando, setEditando] = useState(null)
+  const [draft, setDraft] = useState(null)
 
   const LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
   const LABELS_FULL = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
-  function updateDia(idx, changes) {
-    const next = horarios.map((d, i) => i === idx ? { ...d, ...changes, tipo: 'custom' } : d)
-    onChange(next)
-  }
-
-  function resetGeneral(idx) {
-    const next = horarios.map((d, i) => i === idx ? { ...DEFAULT_HORARIOS[i], tipo: 'general' } : d)
-    onChange(next)
-    setEditando(null)
+  function updateDia(changes) {
+    setDraft(prev => ({ ...prev, ...changes, tipo: 'custom' }))
   }
 
   function getResumen(d) {
@@ -301,7 +304,7 @@ function HorariosPorDia({ horarios, onChange }) {
     return { label: 'Personalizado', bg: '#DCFCE7', color: '#166534' }
   }
 
-  const diaActual = editando !== null ? horarios[editando] : null
+  const diaActual = draft
 
   return (
     <>
@@ -340,7 +343,15 @@ function HorariosPorDia({ horarios, onChange }) {
                   background: badge.bg, color: badge.color, fontWeight: 500, flexShrink: 0,
                 }}>{badge.label}</span>
                 <button
-                  onClick={() => setEditando(editando === idx ? null : idx)}
+                  onClick={() => {
+                    if (editando === idx) {
+                      setEditando(null)
+                      setDraft(null)
+                    } else {
+                      setEditando(idx)
+                      setDraft({ ...horarios[idx] })
+                    }
+                  }}
                   style={{
                     fontSize: 12, color: '#2D6A4F', background: 'none',
                     border: 'none', cursor: 'pointer', padding: '2px 4px', flexShrink: 0,
@@ -358,14 +369,17 @@ function HorariosPorDia({ horarios, onChange }) {
         <div style={{ background: '#F9F7F2', borderRadius: 12, padding: '14px 16px', marginTop: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <span style={{ fontSize: 15, fontWeight: 600, color: '#1F2937' }}>{LABELS_FULL[editando]}</span>
-            <button onClick={() => setEditando(null)} style={{ fontSize: 18, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+            <button
+              onClick={() => { setEditando(null); setDraft(null) }}
+              style={{ fontSize: 18, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer' }}
+            >✕</button>
           </div>
 
           <div className="cd-row cd-row-inline">
             <span className="cd-time-label">Cerrado todo el día</span>
             <button
               className={`cd-toggle ${diaActual.cerrado ? 'on' : ''}`}
-              onClick={() => updateDia(editando, { cerrado: !diaActual.cerrado })}
+              onClick={() => updateDia({ cerrado: !diaActual.cerrado })}
             />
           </div>
 
@@ -374,19 +388,19 @@ function HorariosPorDia({ horarios, onChange }) {
               <div className="cd-sep" />
               <div className="cd-time-row">
                 <label className="cd-time-label">Apertura</label>
-                <TimeSelect value={diaActual.apertura} onChange={v => updateDia(editando, { apertura: v })} />
+                <TimeSelect value={diaActual.apertura} onChange={v => updateDia({ apertura: v })} />
               </div>
               <div className="cd-sep" />
               <div className="cd-time-row">
                 <label className="cd-time-label">Cierre</label>
-                <TimeSelect value={diaActual.cierre} onChange={v => updateDia(editando, { cierre: v })} />
+                <TimeSelect value={diaActual.cierre} onChange={v => updateDia({ cierre: v })} />
               </div>
               <div className="cd-sep" />
               <div className="cd-row cd-row-inline">
                 <span className="cd-time-label">Siesta</span>
                 <button
                   className={`cd-toggle ${diaActual.siesta ? 'on' : ''}`}
-                  onClick={() => updateDia(editando, { siesta: !diaActual.siesta })}
+                  onClick={() => updateDia({ siesta: !diaActual.siesta })}
                 />
               </div>
               {diaActual.siesta && (
@@ -394,30 +408,33 @@ function HorariosPorDia({ horarios, onChange }) {
                   <div className="cd-sep" />
                   <div className="cd-time-row">
                     <label className="cd-time-label">Inicio siesta</label>
-                    <TimeSelect value={diaActual.siesta_inicio} onChange={v => updateDia(editando, { siesta_inicio: v })} />
+                    <TimeSelect value={diaActual.siesta_inicio} onChange={v => updateDia({ siesta_inicio: v })} />
                   </div>
                   <div className="cd-sep" />
                   <div className="cd-time-row">
                     <label className="cd-time-label">Fin siesta</label>
-                    <TimeSelect value={diaActual.siesta_fin} onChange={v => updateDia(editando, { siesta_fin: v })} />
+                    <TimeSelect value={diaActual.siesta_fin} onChange={v => updateDia({ siesta_fin: v })} />
                   </div>
                 </>
               )}
             </>
           )}
 
-          {diaActual.tipo !== 'general' && (
-            <button
-              onClick={() => resetGeneral(editando)}
-              style={{
-                marginTop: 10, fontSize: 12, color: '#9CA3AF',
-                background: 'none', border: 'none', cursor: 'pointer',
-                textDecoration: 'underline', padding: 0,
-              }}
-            >
-              Volver al horario general
-            </button>
-          )}
+          <button
+            onClick={() => {
+              const next = horarios.map((d, i) => i === editando ? { ...draft } : d)
+              onChange(next)
+              setEditando(null)
+              setDraft(null)
+            }}
+            style={{
+              marginTop: 14, width: '100%', padding: '10px', fontSize: 14,
+              fontWeight: 500, color: 'white', background: '#2D6A4F',
+              border: 'none', borderRadius: 10, cursor: 'pointer',
+            }}
+          >
+            Fijar horario
+          </button>
         </div>
       )}
     </>
