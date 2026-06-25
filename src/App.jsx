@@ -5,6 +5,28 @@ import './App.css'
 const API         = 'https://kiosco-ai.onrender.com'
 const STORAGE_KEY = 'kiosco_perfil'
 const DEVICE_KEY  = 'kiosco_dispositivo'
+const HORARIOS_KEY = 'kiosco_horarios'
+
+const DIAS_SEMANA = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
+const DIAS_LABELS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+
+const DEFAULT_HORARIOS = DIAS_SEMANA.map(dia => ({
+  dia,
+  tipo: 'general',
+  cerrado: false,
+  apertura: '09:00',
+  cierre: '20:00',
+  siesta: false,
+  siesta_inicio: '13:00',
+  siesta_fin: '14:00',
+}))
+
+function getStoredHorarios() {
+  try {
+    return JSON.parse(localStorage.getItem(HORARIOS_KEY) || 'null') || DEFAULT_HORARIOS
+  } catch { return DEFAULT_HORARIOS }
+}
+
 const RATINGS_KEY      = 'kiosco_ratings'
 const SEMANA_CACHE_KEY = 'gelline_semana_cache'
 const CACHE_TTL_MS     = 4 * 60 * 60 * 1000
@@ -244,11 +266,122 @@ function TimeSelect({ value, onChange }) {
   )
 }
 
+// ── HorariosPorDia ────────────────────────────────────────────────────────────
+
+function HorariosPorDia({ horarios, onChange }) {
+  const [abierto, setAbierto] = useState(null)
+
+  function updateDia(idx, changes) {
+    const next = horarios.map((d, i) => i === idx ? { ...d, ...changes } : d)
+    onChange(next)
+  }
+
+  function resetGeneral(idx) {
+    updateDia(idx, { tipo: 'general', cerrado: false })
+  }
+
+  function getResumen(d) {
+    if (d.tipo === 'general') return 'Usa horario general'
+    if (d.cerrado) return 'Cerrado'
+    let r = `${d.apertura} – ${d.cierre}`
+    if (d.siesta) r += ` · Siesta ${d.siesta_inicio}–${d.siesta_fin}`
+    return r
+  }
+
+  function getBadge(d) {
+    if (d.tipo === 'general') return { label: 'General', bg: '#F3F4F6', color: '#6B7280' }
+    if (d.cerrado) return { label: 'Cerrado', bg: '#FEE2E2', color: '#991B1B' }
+    return { label: 'Personalizado', bg: '#DCFCE7', color: '#166534' }
+  }
+
+  return (
+    <div className="cd-card">
+      <p className="cd-card-title">Horario por día</p>
+      {horarios.map((d, idx) => {
+        const badge = getBadge(d)
+        const isOpen = abierto === idx
+        return (
+          <div key={d.dia} style={{ borderBottom: idx < horarios.length - 1 ? '0.5px solid #E5E7EB' : 'none' }}>
+            <div
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', cursor: 'pointer' }}
+              onClick={() => setAbierto(isOpen ? null : idx)}
+            >
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: '#1F2937' }}>{DIAS_LABELS[idx]}</div>
+                <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{getResumen(d)}</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: badge.bg, color: badge.color, fontWeight: 500 }}>{badge.label}</span>
+                <span style={{ color: '#9CA3AF', fontSize: 16 }}>{isOpen ? '⌄' : '›'}</span>
+              </div>
+            </div>
+            {isOpen && (
+              <div style={{ paddingBottom: 12 }}>
+                <div className="cd-row cd-row-inline" style={{ marginBottom: 8 }}>
+                  <span className="cd-time-label">Cerrado todo el día</span>
+                  <button
+                    className={`cd-toggle ${d.cerrado ? 'on' : ''}`}
+                    onClick={() => updateDia(idx, { cerrado: !d.cerrado, tipo: 'custom' })}
+                  />
+                </div>
+                {!d.cerrado && (
+                  <>
+                    <div className="cd-time-row">
+                      <label className="cd-time-label">Apertura</label>
+                      <TimeSelect value={d.apertura} onChange={v => updateDia(idx, { apertura: v, tipo: 'custom' })} />
+                    </div>
+                    <div className="cd-sep" />
+                    <div className="cd-time-row">
+                      <label className="cd-time-label">Cierre</label>
+                      <TimeSelect value={d.cierre} onChange={v => updateDia(idx, { cierre: v, tipo: 'custom' })} />
+                    </div>
+                    <div className="cd-sep" />
+                    <div className="cd-row cd-row-inline">
+                      <span className="cd-time-label">Siesta</span>
+                      <button
+                        className={`cd-toggle ${d.siesta ? 'on' : ''}`}
+                        onClick={() => updateDia(idx, { siesta: !d.siesta, tipo: 'custom' })}
+                      />
+                    </div>
+                    {d.siesta && (
+                      <>
+                        <div className="cd-sep" />
+                        <div className="cd-time-row">
+                          <label className="cd-time-label">Inicio siesta</label>
+                          <TimeSelect value={d.siesta_inicio} onChange={v => updateDia(idx, { siesta_inicio: v, tipo: 'custom' })} />
+                        </div>
+                        <div className="cd-sep" />
+                        <div className="cd-time-row">
+                          <label className="cd-time-label">Fin siesta</label>
+                          <TimeSelect value={d.siesta_fin} onChange={v => updateDia(idx, { siesta_fin: v, tipo: 'custom' })} />
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+                {d.tipo !== 'general' && (
+                  <button
+                    onClick={() => resetGeneral(idx)}
+                    style={{ marginTop: 8, fontSize: 12, padding: '4px 10px', border: '0.5px solid #D1D5DB', borderRadius: 6, background: 'transparent', color: '#6B7280', cursor: 'pointer' }}
+                  >
+                    Volver al general
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Configurar Dispositivo (toggle + horario únicamente) ──────────────────────
 
 function ConfigurarDispositivo({ onBack }) {
   const [config,     setConfig]     = useState(getStoredDevice)
   const [debeGrabar, setDebeGrabar] = useState(false)
+  const [horarios,   setHorarios]   = useState(getStoredHorarios)
 
   const configRef   = useRef(config)
   configRef.current = config
@@ -271,6 +404,16 @@ function ConfigurarDispositivo({ onBack }) {
         localStorage.setItem(DEVICE_KEY, JSON.stringify(next))
         setConfig(next)
         setDebeGrabar(data.debe_grabar ?? false)
+        try {
+          const hRes = await fetch(`${API}/horarios`)
+          if (hRes.ok) {
+            const hData = await hRes.json()
+            if (hData.horarios) {
+              localStorage.setItem(HORARIOS_KEY, JSON.stringify(hData.horarios))
+              setHorarios(hData.horarios)
+            }
+          }
+        } catch { }
       } catch { }
     }
     cargarConfig()
@@ -291,6 +434,18 @@ function ConfigurarDispositivo({ onBack }) {
     const id = setInterval(check, 60_000)
     return () => clearInterval(id)
   }, [])
+
+  async function saveHorarios(nuevos) {
+    localStorage.setItem(HORARIOS_KEY, JSON.stringify(nuevos))
+    setHorarios(nuevos)
+    try {
+      await fetch(`${API}/horarios`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ horarios: nuevos }),
+      })
+    } catch { }
+  }
 
   async function saveConfig(updates) {
     const next = { ...configRef.current, ...updates }
@@ -376,6 +531,8 @@ function ConfigurarDispositivo({ onBack }) {
             </>
           )}
         </div>
+
+        <HorariosPorDia horarios={horarios} onChange={saveHorarios} />
 
       </div>
     </div>
