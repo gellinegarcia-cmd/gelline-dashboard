@@ -269,110 +269,158 @@ function TimeSelect({ value, onChange }) {
 // ── HorariosPorDia ────────────────────────────────────────────────────────────
 
 function HorariosPorDia({ horarios, onChange }) {
-  const [abierto, setAbierto] = useState(null)
+  const [expandido, setExpandido] = useState(false)
+  const [editando, setEditando] = useState(null)
+
+  const LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+  const LABELS_FULL = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
   function updateDia(idx, changes) {
-    const next = horarios.map((d, i) => i === idx ? { ...d, ...changes } : d)
+    const next = horarios.map((d, i) => i === idx ? { ...d, ...changes, tipo: 'custom' } : d)
     onChange(next)
   }
 
   function resetGeneral(idx) {
-    updateDia(idx, { tipo: 'general', cerrado: false })
+    const next = horarios.map((d, i) => i === idx ? { ...DEFAULT_HORARIOS[i], tipo: 'general' } : d)
+    onChange(next)
+    setEditando(null)
   }
 
   function getResumen(d) {
-    if (d.tipo === 'general') return 'Usa horario general'
+    if (d.tipo === 'general') return 'Igual al general'
     if (d.cerrado) return 'Cerrado'
-    let r = `${d.apertura} – ${d.cierre}`
-    if (d.siesta) r += ` · Siesta ${d.siesta_inicio}–${d.siesta_fin}`
+    let r = `${d.apertura}–${d.cierre}`
+    if (d.siesta) r += ` · siesta ${d.siesta_inicio}–${d.siesta_fin}`
+    else r += ' · sin siesta'
     return r
   }
 
   function getBadge(d) {
-    if (d.tipo === 'general') return { label: 'General', bg: '#F3F4F6', color: '#6B7280' }
     if (d.cerrado) return { label: 'Cerrado', bg: '#FEE2E2', color: '#991B1B' }
+    if (d.tipo === 'general') return { label: 'General', bg: '#F3F4F6', color: '#9CA3AF' }
     return { label: 'Personalizado', bg: '#DCFCE7', color: '#166534' }
   }
 
+  const diaActual = editando !== null ? horarios[editando] : null
+
   return (
-    <div className="cd-card">
-      <p className="cd-card-title">Horario por día</p>
-      {horarios.map((d, idx) => {
-        const badge = getBadge(d)
-        const isOpen = abierto === idx
-        return (
-          <div key={d.dia} style={{ borderBottom: idx < horarios.length - 1 ? '0.5px solid #E5E7EB' : 'none' }}>
-            <div
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', cursor: 'pointer' }}
-              onClick={() => setAbierto(isOpen ? null : idx)}
-            >
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 500, color: '#1F2937' }}>{DIAS_LABELS[idx]}</div>
-                <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{getResumen(d)}</div>
+    <>
+      <button
+        onClick={() => setExpandido(v => !v)}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          width: '100%', padding: '12px 0 4px', fontSize: 13, color: '#2D6A4F',
+          fontWeight: 500, background: 'none', border: 'none', cursor: 'pointer',
+          borderTop: '0.5px solid #E5E7EB', marginTop: 8,
+        }}
+      >
+        <span>{expandido ? 'Ocultar configuración por día' : '¿Algún día es diferente? Personalizar'}</span>
+        <span style={{ fontSize: 16, color: '#9CA3AF' }}>{expandido ? '⌄' : '›'}</span>
+      </button>
+
+      {expandido && (
+        <div style={{ marginTop: 4 }}>
+          {horarios.map((d, idx) => {
+            const badge = getBadge(d)
+            return (
+              <div
+                key={d.dia}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 0',
+                  borderBottom: idx < horarios.length - 1 ? '0.5px solid #E5E7EB' : 'none',
+                }}
+              >
+                <span style={{ fontSize: 13, fontWeight: 500, color: '#1F2937', width: 34, flexShrink: 0 }}>
+                  {LABELS[idx]}
+                </span>
+                <span style={{ fontSize: 12, color: '#6B7280', flex: 1 }}>{getResumen(d)}</span>
+                <span style={{
+                  fontSize: 10, padding: '2px 7px', borderRadius: 99,
+                  background: badge.bg, color: badge.color, fontWeight: 500, flexShrink: 0,
+                }}>{badge.label}</span>
+                <button
+                  onClick={() => setEditando(editando === idx ? null : idx)}
+                  style={{
+                    fontSize: 12, color: '#2D6A4F', background: 'none',
+                    border: 'none', cursor: 'pointer', padding: '2px 4px', flexShrink: 0,
+                  }}
+                >
+                  {editando === idx ? 'cerrar' : 'editar'}
+                </button>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: badge.bg, color: badge.color, fontWeight: 500 }}>{badge.label}</span>
-                <span style={{ color: '#9CA3AF', fontSize: 16 }}>{isOpen ? '⌄' : '›'}</span>
-              </div>
-            </div>
-            {isOpen && (
-              <div style={{ paddingBottom: 12 }}>
-                <div className="cd-row cd-row-inline" style={{ marginBottom: 8 }}>
-                  <span className="cd-time-label">Cerrado todo el día</span>
-                  <button
-                    className={`cd-toggle ${d.cerrado ? 'on' : ''}`}
-                    onClick={() => updateDia(idx, { cerrado: !d.cerrado, tipo: 'custom' })}
-                  />
-                </div>
-                {!d.cerrado && (
-                  <>
-                    <div className="cd-time-row">
-                      <label className="cd-time-label">Apertura</label>
-                      <TimeSelect value={d.apertura} onChange={v => updateDia(idx, { apertura: v, tipo: 'custom' })} />
-                    </div>
-                    <div className="cd-sep" />
-                    <div className="cd-time-row">
-                      <label className="cd-time-label">Cierre</label>
-                      <TimeSelect value={d.cierre} onChange={v => updateDia(idx, { cierre: v, tipo: 'custom' })} />
-                    </div>
-                    <div className="cd-sep" />
-                    <div className="cd-row cd-row-inline">
-                      <span className="cd-time-label">Siesta</span>
-                      <button
-                        className={`cd-toggle ${d.siesta ? 'on' : ''}`}
-                        onClick={() => updateDia(idx, { siesta: !d.siesta, tipo: 'custom' })}
-                      />
-                    </div>
-                    {d.siesta && (
-                      <>
-                        <div className="cd-sep" />
-                        <div className="cd-time-row">
-                          <label className="cd-time-label">Inicio siesta</label>
-                          <TimeSelect value={d.siesta_inicio} onChange={v => updateDia(idx, { siesta_inicio: v, tipo: 'custom' })} />
-                        </div>
-                        <div className="cd-sep" />
-                        <div className="cd-time-row">
-                          <label className="cd-time-label">Fin siesta</label>
-                          <TimeSelect value={d.siesta_fin} onChange={v => updateDia(idx, { siesta_fin: v, tipo: 'custom' })} />
-                        </div>
-                      </>
-                    )}
-                  </>
-                )}
-                {d.tipo !== 'general' && (
-                  <button
-                    onClick={() => resetGeneral(idx)}
-                    style={{ marginTop: 8, fontSize: 12, padding: '4px 10px', border: '0.5px solid #D1D5DB', borderRadius: 6, background: 'transparent', color: '#6B7280', cursor: 'pointer' }}
-                  >
-                    Volver al general
-                  </button>
-                )}
-              </div>
-            )}
+            )
+          })}
+        </div>
+      )}
+
+      {editando !== null && diaActual && (
+        <div style={{ background: '#F9F7F2', borderRadius: 12, padding: '14px 16px', marginTop: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <span style={{ fontSize: 15, fontWeight: 600, color: '#1F2937' }}>{LABELS_FULL[editando]}</span>
+            <button onClick={() => setEditando(null)} style={{ fontSize: 18, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
           </div>
-        )
-      })}
-    </div>
+
+          <div className="cd-row cd-row-inline">
+            <span className="cd-time-label">Cerrado todo el día</span>
+            <button
+              className={`cd-toggle ${diaActual.cerrado ? 'on' : ''}`}
+              onClick={() => updateDia(editando, { cerrado: !diaActual.cerrado })}
+            />
+          </div>
+
+          {!diaActual.cerrado && (
+            <>
+              <div className="cd-sep" />
+              <div className="cd-time-row">
+                <label className="cd-time-label">Apertura</label>
+                <TimeSelect value={diaActual.apertura} onChange={v => updateDia(editando, { apertura: v })} />
+              </div>
+              <div className="cd-sep" />
+              <div className="cd-time-row">
+                <label className="cd-time-label">Cierre</label>
+                <TimeSelect value={diaActual.cierre} onChange={v => updateDia(editando, { cierre: v })} />
+              </div>
+              <div className="cd-sep" />
+              <div className="cd-row cd-row-inline">
+                <span className="cd-time-label">Siesta</span>
+                <button
+                  className={`cd-toggle ${diaActual.siesta ? 'on' : ''}`}
+                  onClick={() => updateDia(editando, { siesta: !diaActual.siesta })}
+                />
+              </div>
+              {diaActual.siesta && (
+                <>
+                  <div className="cd-sep" />
+                  <div className="cd-time-row">
+                    <label className="cd-time-label">Inicio siesta</label>
+                    <TimeSelect value={diaActual.siesta_inicio} onChange={v => updateDia(editando, { siesta_inicio: v })} />
+                  </div>
+                  <div className="cd-sep" />
+                  <div className="cd-time-row">
+                    <label className="cd-time-label">Fin siesta</label>
+                    <TimeSelect value={diaActual.siesta_fin} onChange={v => updateDia(editando, { siesta_fin: v })} />
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {diaActual.tipo !== 'general' && (
+            <button
+              onClick={() => resetGeneral(editando)}
+              style={{
+                marginTop: 10, fontSize: 12, color: '#9CA3AF',
+                background: 'none', border: 'none', cursor: 'pointer',
+                textDecoration: 'underline', padding: 0,
+              }}
+            >
+              Volver al horario general
+            </button>
+          )}
+        </div>
+      )}
+    </>
   )
 }
 
