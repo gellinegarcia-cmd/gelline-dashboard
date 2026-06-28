@@ -22,9 +22,7 @@ const DEFAULT_HORARIOS = DIAS_SEMANA.map(dia => ({
 }))
 
 function getStoredHorarios() {
-  try {
-    return JSON.parse(localStorage.getItem(HORARIOS_KEY) || 'null') || DEFAULT_HORARIOS
-  } catch { return DEFAULT_HORARIOS }
+  return DEFAULT_HORARIOS
 }
 
 const RATINGS_KEY      = 'kiosco_ratings'
@@ -362,7 +360,9 @@ function HorariosPorDia({ horarios, onChange }) {
 
       {expandido && (
         <div style={{ marginTop: 4 }}>
-          {horarios.map((d, idx) => {
+          {horarios.map((d) => {
+            const idx = DIAS_SEMANA.indexOf(d.dia)
+            if (idx === -1) return null
             const badge = getBadge(d)
             return (
               <div
