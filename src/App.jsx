@@ -239,39 +239,78 @@ function ProfileForm({ initial = {}, onSave, onCancel }) {
 // ── TimeSelect ────────────────────────────────────────────────────────────────
 
 function TimeSelect({ value, onChange }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value || '09:00')
+  const parts = (value || '09:00').split(':')
+  const [h, setH] = useState(parts[0] || '09')
+  const [m, setM] = useState(parts[1] || '00')
+  const minRef = useRef(null)
 
   useEffect(() => {
-    if (!editing) setDraft(value || '09:00')
-  }, [value, editing])
+    const p = (value || '09:00').split(':')
+    setH(p[0] || '09')
+    setM(p[1] || '00')
+  }, [value])
 
-  function handleBlur() {
-    setEditing(false)
-    const match = draft.match(/^([01]?\d|2[0-3]):([0-5]\d)$/)
-    if (match) {
-      const h = match[1].padStart(2, '0')
-      const m = match[2]
-      onChange(`${h}:${m}`)
-    } else {
-      setDraft(value || '09:00')
-    }
+  function commitH(val) {
+    const n = parseInt(val)
+    const fixed = isNaN(n) || n < 0 || n > 23 ? (parts[0] || '09') : String(n).padStart(2, '0')
+    setH(fixed)
+    onChange(`${fixed}:${m}`)
+  }
+
+  function commitM(val) {
+    const n = parseInt(val)
+    const fixed = isNaN(n) || n < 0 || n > 59 ? '00' : String(n).padStart(2, '0')
+    setM(fixed)
+    onChange(`${h}:${fixed}`)
   }
 
   return (
-    <input
-      inputMode="numeric"
-      value={draft}
-      onFocus={() => setEditing(true)}
-      onChange={e => setDraft(e.target.value)}
-      onBlur={handleBlur}
-      style={{
-        width: 64, textAlign: 'center', fontSize: 15, fontWeight: 500,
-        padding: '6px 8px', border: '0.5px solid #D1D5DB', borderRadius: 8,
-        background: '#F9F7F2', color: '#1F2937', outline: 'none',
-      }}
-      placeholder="09:00"
-    />
+    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{
+        display: 'inline-flex', alignItems: 'center',
+        border: '0.5px solid #D1D5DB', borderRadius: 8,
+        background: '#F9F7F2', overflow: 'hidden', height: 40,
+      }}>
+        <input
+          inputMode="numeric"
+          maxLength={2}
+          value={h}
+          onChange={e => {
+            const v = e.target.value.replace(/\D/g, '')
+            setH(v)
+            if (v.length === 2) minRef.current?.focus()
+          }}
+          onBlur={e => commitH(e.target.value)}
+          onFocus={e => e.target.select()}
+          placeholder="09"
+          style={{
+            width: 36, textAlign: 'center', fontSize: 15, fontWeight: 500,
+            color: '#1F2937', background: 'transparent', border: 'none',
+            outline: 'none', padding: '0 4px',
+          }}
+        />
+        <span style={{ fontSize: 15, fontWeight: 500, color: '#6B7280', userSelect: 'none' }}>:</span>
+        <input
+          ref={minRef}
+          inputMode="numeric"
+          maxLength={2}
+          value={m}
+          onChange={e => {
+            const v = e.target.value.replace(/\D/g, '')
+            setM(v)
+          }}
+          onBlur={e => commitM(e.target.value)}
+          onFocus={e => e.target.select()}
+          placeholder="00"
+          style={{
+            width: 36, textAlign: 'center', fontSize: 15, fontWeight: 500,
+            color: '#1F2937', background: 'transparent', border: 'none',
+            outline: 'none', padding: '0 4px',
+          }}
+        />
+      </div>
+      <span style={{ fontSize: 10, color: '#C4B8A8', marginTop: 2, letterSpacing: '0.02em' }}>24 hs</span>
+    </div>
   )
 }
 
