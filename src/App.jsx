@@ -58,6 +58,22 @@ function getStoredRatings() {
   try { return JSON.parse(localStorage.getItem(RATINGS_KEY) || '{}') } catch { return {} }
 }
 
+const CHAT_KEY = 'gelline_chat_hoy'
+
+function getChatLocal() {
+  try {
+    const d = JSON.parse(localStorage.getItem(CHAT_KEY) || '{}')
+    if (d.fecha !== new Date().toISOString().split('T')[0]) return { mensajes: [], contador: 0, limite: 10 }
+    return d
+  } catch { return { mensajes: [], contador: 0, limite: 10 } }
+}
+
+function saveChatLocal(data) {
+  try {
+    localStorage.setItem(CHAT_KEY, JSON.stringify({ ...data, fecha: new Date().toISOString().split('T')[0] }))
+  } catch {}
+}
+
 function simpleHash(str) {
   let h = 0
   for (let i = 0; i < str.length; i++) h = Math.imul(31, h) + str.charCodeAt(i) | 0
@@ -700,7 +716,11 @@ export default function App() {
   const [analyzing,     setAnalyzing]     = useState(false)
   const [lastUpdate,    setLastUpdate]    = useState(null)
   const [error,         setError]         = useState(null)
-  const [textInput,     setTextInput]     = useState('')
+  const [textInput,    setTextInput]    = useState('')
+  const [chatMensajes, setChatMensajes] = useState(() => getChatLocal().mensajes)
+  const [chatContador, setChatContador] = useState(() => getChatLocal().contador)
+  const [chatLimite,   setChatLimite]   = useState(10)
+  const [chatLoading,  setChatLoading]  = useState(false)
   const [tab,           setTab]           = useState('hoy')
   const [gellineActivo,     setGellineActivo]     = useState(() => getStoredDevice().activo)
   const [gellineDebeGrabar, setGellineDebeGrabar] = useState(false)
@@ -814,27 +834,41 @@ export default function App() {
     return () => clearInterval(id)
   }, [])
 
-  const sendText = async () => {
-    const texto = textInput.trim()
-    if (!texto || loading) return
+  const sendChat = async () => {
+    const pregunta = textInput.trim()
+    if (!pregunta || chatLoading || chatContador >= chatLimite) return
     setTextInput('')
+    setChatLoading(true)
     setError(null)
-    setLoading(true)
+
+    const nuevosMensajes = [...chatMensajes, { role: 'user', content: pregunta }]
+    setChatMensajes(nuevosMensajes)
+
     try {
-      const res  = await fetch(`${API}/texto`, {
-        method:  'POST',
+      const res = await fetch(`${API}/chat`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ texto, ...(perfil && { perfil }) }),
+        body: JSON.stringify({ pregunta }),
       })
       const data = await res.json()
+
+      if (res.status === 429) {
+        setError(data.mensaje || 'Límite de consultas alcanzado por hoy.')
+        setChatLoading(false)
+        return
+      }
       if (!res.ok) throw new Error(data.error || 'Error del servidor')
-      setDecisiones(data.decisiones)
-      setLastUpdate(new Date())
-      setTab('hoy')
+
+      const mensajesConRespuesta = [...nuevosMensajes, { role: 'assistant', content: data.respuesta }]
+      setChatMensajes(mensajesConRespuesta)
+      setChatContador(data.contador)
+      setChatLimite(data.limite)
+      saveChatLocal({ mensajes: mensajesConRespuesta, contador: data.contador, limite: data.limite })
     } catch (e) {
-      setError(e.message || 'Error al enviar.')
+      setError(e.message || 'Error al conectar con Gelline.')
+      setChatMensajes(chatMensajes)
     } finally {
-      setLoading(false)
+      setChatLoading(false)
     }
   }
 
@@ -981,24 +1015,55 @@ export default function App() {
         )}
       </div>
 
-      <div className="query-bar">
-        <input
-          className="query-input"
-          type="text"
-          value={textInput}
-          onChange={e => setTextInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && sendText()}
-          placeholder="Preguntale algo a Gelline..."
-          disabled={loading}
-        />
-        <button
-          className="query-btn"
-          onClick={sendText}
-          disabled={loading || !textInput.trim()}
-          aria-label="Enviar"
-        >
-          →
-        </button>
+      <div className="chat-area">
+        {chatMensajes.length > 0 && (
+          <div className="chat-mensajes">
+            {chatMensajes.map((m, i) => (
+              <div key={i} className={`chat-burbuja ${m.role === 'user' ? 'chat-user' : 'chat-gelline'}`}>
+                {m.role === 'assistant' && (
+                  <div className="chat-gelline-label">Gelline</div>
+                )}
+                <div className="chat-texto">{m.content}</div>
+              </div>
+            ))}
+            {chatLoading && (
+              <div className="chat-burbuja chat-gelline">
+                <div className="chat-gelline-label">Gelline</div>
+                <div className="chat-texto chat-typing">Pensando...</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="chat-restantes">
+          {chatContador >= chatLimite
+            ? 'Usaste todas las consultas de hoy — volvé mañana'
+            : chatContador > 0
+              ? `${chatLimite - chatContador} consultas restantes hoy`
+              : 'Preguntale algo a Gelline sobre tu negocio'
+          }
+        </div>
+
+        <div className="query-bar">
+          <input
+            className="query-input"
+            type="text"
+            value={textInput}
+            onChange={e => setTextInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && sendChat()}
+            placeholder={chatContador >= chatLimite ? 'Límite diario alcanzado' : 'Preguntale algo a Gelline...'}
+            disabled={chatLoading || chatContador >= chatLimite}
+            maxLength={300}
+          />
+          <button
+            className="query-btn"
+            onClick={sendChat}
+            disabled={chatLoading || !textInput.trim() || chatContador >= chatLimite}
+            aria-label="Enviar"
+          >
+            {chatLoading ? '...' : '→'}
+          </button>
+        </div>
       </div>
 
       {showEdit && (

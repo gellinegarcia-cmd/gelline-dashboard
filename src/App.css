@@ -755,3 +755,65 @@ body {
 }
 
 .modal-close:hover { background: #f3f4f6; }
+
+.chat-area {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+
+.chat-mensajes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.chat-burbuja {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.chat-user {
+  align-self: flex-end;
+  background: #2D6A4F;
+  color: #F5F0E8;
+  border-bottom-right-radius: 4px;
+}
+
+.chat-gelline {
+  align-self: flex-start;
+  background: #F0EBE0;
+  color: #1F2937;
+  border-bottom-left-radius: 4px;
+}
+
+.chat-gelline-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #2D6A4F;
+  margin-bottom: 4px;
+  letter-spacing: 0.05em;
+}
+
+.chat-texto {
+  white-space: pre-wrap;
+}
+
+.chat-typing {
+  color: #9CA3AF;
+  font-style: italic;
+}
+
+.chat-restantes {
+  font-size: 11px;
+  color: #9CA3AF;
+  text-align: center;
+  padding: 2px 0;
+}
